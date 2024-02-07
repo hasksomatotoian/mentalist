@@ -66,8 +66,6 @@ class OpenAiService:
 
         current_checksum = hashlib.sha1((assistant.model + instructions).encode('utf-8')).hexdigest()
 
-
-
         if assistant.ai_id is None:
             ai_assistant = self.client.beta.assistants.create(
                 name=assistant.name,
@@ -127,3 +125,82 @@ class OpenAiService:
         else:
             raise RuntimeError(f"OpenAI Run finished with status {ai_run_retrieved.status}")
 
+
+'''
+def create_valid_filename(text, default_name="default_file"):
+    # Characters to keep, add more if needed
+    valid_chars = "-_.() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    # Replace spaces with underscores
+    text = text.replace(" ", "_")
+    # Remove invalid characters
+    clean_text = ''.join(c for c in text if c in valid_chars)
+    # Limit length to 255 characters (common maximum for file systems)
+    clean_text = clean_text[:255]
+    # Remove leading and trailing special characters that can cause issues
+    clean_text = re.sub(r'^[._-]+|[._-]+$', '', clean_text)
+    # Ensure the filename is not empty, '.' or '..'
+    if not clean_text or clean_text in {'.', '..'}:
+        clean_text = default_name
+    return clean_text
+
+
+def download_posts(database_service: DatabaseService, config_service: ConfigService):
+    logging.debug("Getting list of posts to download")
+    posts = database_service.get_posts_to_download()
+    logging.info(f"Found {len(posts)} posts to download")
+    for post in posts:
+        logging.debug(f"Downloading post \"{post}\"")
+        post_filename = (f"{config_service.post_files_folder}\\" +
+                         f"{post.published.strftime('%Y%m%d_%H%M%S')}-" +
+                         f"{create_valid_filename(post.title)}.pdf")
+
+        try:
+            if not os.path.exists(post_filename):
+                pdfkit.from_url(post.link, post_filename)
+            post.status = PostStatus.DOWNLOADED
+            post.filename = post_filename
+            post.last_error = None
+            logging.info(f"Post \"{post}\" downloaded successfully")
+        except Exception as e:
+            post.last_error = f"{e}"
+            logging.error(f"Error when downloading post \"{post}\": {e}")
+
+        database_service.update_post(post)
+
+
+def upload_posts(database_service: DatabaseService, config_service: ConfigService):
+    logging.debug("Getting list of posts to upload")
+    posts = database_service.get_posts_to_upload()
+    logging.info(f"Found {len(posts)} posts to upload")
+
+    client = OpenAI(
+        api_key=config_service.openai_api_key
+    )
+
+    for post in posts:
+
+        try:
+            logging.debug(f"Uploading post \"{post}\"")
+            file = client.files.create(
+                file=open(post.filename, "rb"),
+                purpose='assistants'
+            )
+            post.status = PostStatus.UPLOADED
+            post.ai_fileid = file.id
+            post.last_error = None
+
+            if config_service.delete_local_post_file_after_its_uploaded:
+                try:
+                    os.remove(post.filename)
+                    post.filename = None
+                    logging.debug(f"File \"{post.filename}\" successfully deleted")
+                except Exception as e:
+                    logging.warning(f"Error when deleting file \"{post.filename}\": {e}")
+
+            logging.info(f"Post \"{post}\" uploaded successfully")
+        except Exception as e:
+            post.last_error = f"{e}"
+            logging.error(f"Error when uploading post \"{post}\": {e}")
+
+        database_service.update_post(post)
+'''

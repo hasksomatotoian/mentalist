@@ -89,7 +89,7 @@ class DatabaseService:
 
     def create_data(self):
         self.add_rss_feed(RssFeed(link="https://www.formula1.com/content/fom-website/en/latest/all.xml"))
-        # self.add_rss_feed(RssFeed(link="http://www1.skysports.com/feeds/12433/news.xml"))
+        self.add_rss_feed(RssFeed(link="http://www1.skysports.com/feeds/12433/news.xml"))
         # self.add_rss_feed(RssFeed(link="http://www.f1-fansite.com/feed/"))
         # self.add_rss_feed(RssFeed(link="http://gpf1.cz/feed/"))
         # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
