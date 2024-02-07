@@ -14,6 +14,8 @@ import logging
 import pdfkit
 import re
 
+from services.openai_service import OpenAiService
+
 
 def create_valid_filename(text, default_name="default_file"):
     # Characters to keep, add more if needed
@@ -244,11 +246,17 @@ def rank_posts(database_service: DatabaseService, config_service: ConfigService)
 
 
 if __name__ == '__main__':
-    conf_service = ConfigService()
-    logging.basicConfig(level=conf_service.logging_level, format=conf_service.logging_format)
-    db_service = DatabaseService(conf_service)
+    cfg_service = ConfigService()
+    logging.basicConfig(level=cfg_service.logging_level, format=cfg_service.logging_format)
 
-    # get_latest_posts(db_service)
+    db_service = DatabaseService(cfg_service)
+
+    get_latest_posts(db_service)
+
+    openai_service = OpenAiService(database_service=db_service, config_service=cfg_service)
+    openai_service.rank_posts_by_title_and_summary()
+
+
     # download_posts(db_service, conf_service)
     # upload_posts(db_service, conf_service)
-    rank_posts(db_service, conf_service)
+    # rank_posts(db_service, conf_service)

@@ -81,8 +81,8 @@ class DatabaseService:
                 needs_code_interpreter INTEGER NOT NULL,
                 needs_retrieval INTEGER NOT NULL,
                 ai_id TEXT,
-                created TEXT NOT NULL,
-                last_update TEXT NOT NULL,
+                created TEXT,
+                last_update TEXT,
                 checksum TEXT
             );
         """)
@@ -96,7 +96,7 @@ class DatabaseService:
 
         self.add_assistant(Assistant(name="F1 Assistant", description="",
                                      instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-1106-preview",
-                                     needs_code_interpreter=False, needs_retrieval=True))
+                                     needs_code_interpreter=False, needs_retrieval=False))
 
     def add_assistant(self, assistant: Assistant):
         sql = """
@@ -194,6 +194,9 @@ class DatabaseService:
 
     def get_posts_to_rank(self):
         return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
+
+    def get_posts_without_rank(self):
+        return self._get_posts(f"ai_rank = 0")
 
     def _get_posts(self, where: str):
         self.cursor.execute("""
