@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import logging
 import time
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 
 from openai import OpenAI
 
+from model.post_group import PostGroup
 from model.post_status import PostStatus
 from services.config_service import ConfigService
 from services.database_service import DatabaseService
@@ -20,42 +22,63 @@ class OpenAiService:
         )
 
     def rank_posts_by_title_and_summary(self):
+        user_messages = self.get_posts_without_rank_jsons()
+
+        if user_messages is None:
+            return
+
         # TODO: Read assistant name from Post
         ai_assistant_id = self._get_assistant_id("F1 Assistant")
 
-        logging.debug("Getting list of posts to rank")
-        posts = self.database_service.get_posts_without_rank()
-        logging.info(f"Found {len(posts)} posts to rank")
+        for user_message in user_messages:
+            responses = self._get_responses_from_json(ai_assistant_id, user_message)
+            if responses is not None:
+                for response in responses:
+                    try:
+                        post_id = int(response["ID"])
+                        post = self.database_service.get_post_by_id(post_id)
+                        if post is not None:
+                            post.ai_rank = int(response["RATING"])
+                            post.ai_summary = response["RECOMMENDATION"]
+                            post.status = PostStatus.RANKED
+                            post.last_error = None
+                            self.database_service.update_post(post)
+                            logging.info(f"Post \"{post}\" ranked successfully")
+                        else:
+                            logging.error(f"Could not find post with ID=\"{response["ID"]}\"")
 
-        for post in posts:
-            try:
-                logging.debug(f"Ranking post \"{post}\"")
+                    except Exception as e:
+                        logging.error(f"Error when ranking response \"{response}\": {e}")
 
-                user_message = ("Use your instructions for this post:\n" +
-                                f"Title: \"{post.title}\"\n" +
-                                f"Summary: \"{post.summary}\"")
+    def group_posts_by_title_and_summary(self):
+        user_message = self.get_posts_without_group_json()
 
-                response_json = self._get_response(ai_assistant_id, user_message)
-                response_json = response_json.replace("```json", "")
-                response_json = response_json.replace("```", "")
+        if user_message is None:
+            return
+
+        # TODO: Read assistant name from Post
+        ai_assistant_id = self._get_assistant_id("F1 - Grouping")
+
+        responses = self._get_responses_from_json(ai_assistant_id, user_message)
+        if responses is not None:
+            for response in responses:
                 try:
-                    response = json.loads(response_json)
+                    post_group = PostGroup(title=response["GROUP_TITLE"], summary=response["GROUP_SUMMARY"])
+                    self.database_service.add_post_group(post_group)
+                    logging.info(f"Group \"{post_group}\" created successfully")
+                    post_ids = response["IDs"].split(',')
+                    for post_id_as_str in post_ids:
+                        post_id = int(post_id_as_str)
+                        post = self.database_service.get_post_by_id(post_id)
+                        if post is not None:
+                            post.post_group_id = post_group.id
+                            self.database_service.update_post(post)
+                            logging.info(f"Post \"{post}\" grouped successfully")
+                        else:
+                            logging.error(f"Could not find post with ID=\"{response["ID"]}\"")
+
                 except Exception as e:
-                    raise RuntimeError(f"Error when parsing response JSON: {response_json}")
-
-                post.ai_rank = int(response["rating"])
-                post.ai_summary = response["summary"]
-
-                post.status = PostStatus.RANKED
-                post.last_error = None
-
-                logging.info(f"Post \"{post}\" ranked successfully")
-
-            except Exception as e:
-                post.last_error = f"{e}"
-                logging.error(f"Error when ranking post \"{post}\": {e}")
-
-            self.database_service.update_post(post)
+                    logging.error(f"Error when grouping response \"{response}\": {e}")
 
     def _get_assistant_id(self, assistant_name: str):
 
@@ -95,15 +118,13 @@ class OpenAiService:
 
         return assistant.ai_id
 
-    def _get_response(self, ai_assistant_id: str, user_message: str):
-        ai_thread = self.client.beta.threads.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_message
-                }
-            ]
-        )
+    def _get_responses_from_json(self, ai_assistant_id: str, user_message: str):
+        ai_thread = self.client.beta.threads.create()
+
+        self.client.beta.threads.messages.create(
+            thread_id=ai_thread.id,
+            content=user_message,
+            role="user")
 
         ai_run = self.client.beta.threads.runs.create(
             thread_id=ai_thread.id,
@@ -120,10 +141,72 @@ class OpenAiService:
             time.sleep(5)
 
         if ai_run_retrieved.status == 'completed':
-            messages = self.client.beta.threads.messages.list(thread_id=ai_thread.id)
-            return messages.data[0].content[0].text.value
+            try:
+                messages = self.client.beta.threads.messages.list(thread_id=ai_thread.id)
+                response_json = messages.data[0].content[0].text.value.replace("```json", "")
+                response_json = response_json.replace("```", "")
+            except Exception as e:
+                logging.error(f"Error when reading response text: {e}")
+                return None
+            try:
+                return json.loads(response_json)
+            except Exception as e:
+                logging.error(f"Error when parsing response from \"{response_json}\": {e}")
         else:
-            raise RuntimeError(f"OpenAI Run finished with status {ai_run_retrieved.status}")
+            logging.error(f"OpenAI Run finished with status {ai_run_retrieved.status}")
+
+        return None
+
+    def get_posts_without_rank_jsons(self):
+        messages = []
+
+        logging.debug("Getting list of posts to rank")
+        posts = self.database_service.get_posts_without_rank()
+        logging.info(f"Found {len(posts)} posts to rank")
+
+        if len(posts) < 1:
+            return None
+
+        batch_index = 0
+        formatted_posts = ""
+        for post in posts:
+            if batch_index == 0:
+                formatted_posts = "{[\n"
+            formatted_posts += "\t{"
+            formatted_posts += f"\"ID\": \"{post.id}\", "
+            formatted_posts += f"\"TITLE\": \"{html.escape(post.title)}\","
+            formatted_posts += f"\"SUMMARY\": \"{html.escape(post.summary)}\""
+            formatted_posts += "},\n"
+            batch_index += 1
+            if batch_index >= self.config_service.openai_posts_batch_size:
+                formatted_posts += "]}"
+                messages.append(formatted_posts)
+                batch_index = 0
+
+        if batch_index >= 0:
+            formatted_posts += "]}"
+            messages.append(formatted_posts)
+
+        return messages
+
+    def get_posts_without_group_json(self):
+        logging.debug("Getting list of posts to group")
+        posts = self.database_service.get_posts_without_group()
+        logging.info(f"Found {len(posts)} posts to group")
+
+        if len(posts) < 1:
+            return None
+
+        formatted_posts = "{[\n"
+        for post in posts:
+            formatted_posts += "\t{"
+            formatted_posts += f"\"ID\": \"{post.id}\", "
+            formatted_posts += f"\"TITLE\": \"{html.escape(post.title)}\","
+            formatted_posts += f"\"SUMMARY\": \"{html.escape(post.summary)}\""
+            formatted_posts += "},\n"
+        formatted_posts += "]}"
+
+        return formatted_posts
 
 
 '''

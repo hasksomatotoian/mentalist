@@ -4,6 +4,7 @@ from datetime import datetime
 
 from model.assistant import Assistant
 from model.post import Post
+from model.post_group import PostGroup
 from model.post_status import PostStatus
 from model.rss_feed import RssFeed
 from services.config_service import ConfigService
@@ -47,7 +48,7 @@ class DatabaseService:
     def create_db(self):
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS rss_feeds (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 link TEXT NOT NULL UNIQUE,
                 title TEXT,
                 last_update TEXT,
@@ -56,7 +57,7 @@ class DatabaseService:
         """)
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 link TEXT NOT NULL UNIQUE,
                 title TEXT NOT NULL,
                 summary TEXT NOT NULL,
@@ -68,12 +69,22 @@ class DatabaseService:
                 last_error TEXT,
                 ai_fileid TEXT,
                 ai_rank INTEGER NOT NULL,
-                ai_summary TEXT
+                ai_summary TEXT,
+                post_group_id INTEGER
+            );
+        """)
+        self._execute_sql("""
+            CREATE TABLE IF NOT EXISTS post_groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                latest_post_published TEXT,
+                best_post_ai_rank INTEGER
             );
         """)
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS assistants (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 description TEXT,
                 instructions_filename TEXT NOT NULL,
@@ -95,7 +106,10 @@ class DatabaseService:
         # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
 
         self.add_assistant(Assistant(name="F1 Assistant", description="",
-                                     instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-1106-preview",
+                                     instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-turbo-preview",
+                                     needs_code_interpreter=False, needs_retrieval=False))
+        self.add_assistant(Assistant(name="F1 - Grouping", description="",
+                                     instructions_filename="./instructions/F1_GROUPING.md", model="gpt-4-turbo-preview",
                                      needs_code_interpreter=False, needs_retrieval=False))
 
     def add_assistant(self, assistant: Assistant):
@@ -109,7 +123,8 @@ class DatabaseService:
                 _bool_to_int(assistant.needs_code_interpreter), _bool_to_int(assistant.needs_retrieval),
                 assistant.ai_id, _datetime_to_text(assistant.created), _datetime_to_text(assistant.last_update),
                 assistant.checksum)
-        self._execute_sql(sql, data)
+        cursor = self._execute_sql(sql, data)
+        assistant.id = cursor.lastrowid
 
     def get_assistant(self, name: str):
         sql = """
@@ -151,7 +166,8 @@ class DatabaseService:
             VALUES(?, ?, ?, ?)
         """
         data = (rss_feed.link, rss_feed.title, _datetime_to_text(rss_feed.last_update), rss_feed.last_error)
-        self._execute_sql(sql, data)
+        cursor = self._execute_sql(sql, data)
+        rss_feed.id = cursor.lastrowid
 
     def update_rss_feed(self, rss_feed: RssFeed):
         sql = """
@@ -177,14 +193,15 @@ class DatabaseService:
         sql = """
             INSERT OR IGNORE INTO posts
                 (link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary)
+                ai_fileid, ai_rank, ai_summary, post_group_id)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
                 _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary)
-        self._execute_sql(sql, data)
+                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, post.post_group_id)
+        cursor = self._execute_sql(sql, data)
+        post.id = cursor.lastrowid
 
     def get_posts_to_download(self):
         return self._get_posts(f"status = {PostStatus.INIT.value} AND last_error IS NULL")
@@ -196,13 +213,22 @@ class DatabaseService:
         return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
 
     def get_posts_without_rank(self):
-        return self._get_posts(f"ai_rank = 0")
+        return self._get_posts("ai_rank = 0")
+
+    def get_posts_without_group(self):
+        return self._get_posts("post_group_id IS NULL")
+
+    def get_post_by_id(self, post_id: int):
+        posts = self._get_posts(f"id = {post_id}")
+        if len(posts) > 0:
+            return posts[0]
+        return None
 
     def _get_posts(self, where: str):
         self.cursor.execute("""
             SELECT 
                 id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary
+                ai_fileid, ai_rank, ai_summary, post_group_id
             FROM posts
             WHERE
         """ + where)
@@ -212,7 +238,7 @@ class DatabaseService:
             post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
                         published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
                         rss_feed_id=row[6], status=PostStatus(row[7]), filename=row[8], last_error=row[9],
-                        ai_fileid=row[10], ai_rank=row[11], ai_summary=row[12])
+                        ai_fileid=row[10], ai_rank=row[11], ai_summary=row[12], post_group_id=row[13])
             posts.append(post)
         return posts
 
@@ -221,20 +247,58 @@ class DatabaseService:
             UPDATE posts
             SET
                 link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, status=?, filename=?, last_error=?,
-                ai_fileid=?, ai_rank=?, ai_summary=?
+                ai_fileid=?, ai_rank=?, ai_summary=?, post_group_id=?
             WHERE id = ?
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
                 _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, post.id)
+                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, post.post_group_id, post.id)
+        self._execute_sql(sql, data)
+
+    def add_post_group(self, post_group: PostGroup):
+        sql = """
+            INSERT INTO post_groups
+                (title, summary, latest_post_published, best_post_ai_rank)
+            VALUES(?, ?, ?, ?)
+        """
+        data = (post_group.title, post_group.summary, _datetime_to_text(post_group.latest_post_published),
+                post_group.best_post_ai_rank)
+        cursor = self._execute_sql(sql, data)
+        post_group.id = cursor.lastrowid
+
+    def get_post_groups(self):
+        sql = """
+            SELECT
+                id, title, summary, latest_post_published, best_post_ai_rank
+            FROM post_groups
+            """
+        self.cursor.execute(sql)
+        rows = self.cursor.fetchall()
+        if len(rows) > 0:
+            row = rows[0]
+            post_group = PostGroup(post_group_id=row[0], title=row[1], summary=row[2],
+                                   latest_post_published=_text_to_datetime(row[3]),
+                                   best_post_ai_rank=row[4])
+            return post_group
+        return None
+
+    def update_post_group(self, post_group: PostGroup):
+        sql = """
+            UPDATE post_groups SET 
+                title=?, summary=?, latest_post_published=?, best_post_ai_rank=?
+            WHERE id=?
+        """
+        data = (post_group.title, post_group.summary, _datetime_to_text(post_group.latest_post_published),
+                post_group.best_post_ai_rank, post_group.id)
         self._execute_sql(sql, data)
 
     def _execute_sql(self, sql, data=None):
+        cursor = None
         try:
             if data is None:
-                self.cursor.execute(sql)
+                cursor = self.cursor.execute(sql)
             else:
-                self.cursor.execute(sql, data)
+                cursor = self.cursor.execute(sql, data)
             self.connection.commit()
         except sqlite3.Error as e:
             print(f"Database error: {e}\nSQL:{sql}")
@@ -242,6 +306,7 @@ class DatabaseService:
         except Exception as e:
             print(f"Exception in _query: {e}\nSQL:{sql}")
             self.connection.rollback()
+        return cursor
 
     def __del__(self):
         self.connection.close()

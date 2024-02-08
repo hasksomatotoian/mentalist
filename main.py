@@ -15,3 +15,7 @@ if __name__ == '__main__':
 
     openai_service = OpenAiService(database_service=db_service, config_service=cfg_service)
     openai_service.rank_posts_by_title_and_summary()
+    openai_service.group_posts_by_title_and_summary()
+    # messages = openai_service.get_messages()
+    # for message in messages:
+    #     print(message)

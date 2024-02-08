@@ -1,8 +1,8 @@
-import logging
-from datetime import datetime, timezone
-
 import feedparser
+import html
+import logging
 
+from datetime import datetime, timezone
 from model.post import Post
 from services.database_service import DatabaseService
 
@@ -40,7 +40,8 @@ class RssFeedService:
                         )
                     else:
                         published = None
-                    post = Post(entry.link, entry.title, entry.summary, published, rss_feed.id)
+                    post = Post(entry.link, html.unescape(entry.title), html.unescape(entry.summary),
+                                published, rss_feed.id)
                     self.database_service.add_post(post)
 
                 rss_feed.last_error = None
