@@ -15,7 +15,7 @@ class ConfigService:
         self.post_files_folder = ".\\post_files"
         self.openai_api_key = os.environ.get('OPENAI_API_KEY')
 
-        self.openai_posts_batch_size = 10
+        self.openai_posts_batch_size = 20
 
         self.delete_local_post_file_after_its_uploaded = False
         self.delete_uploaded_post_file_after_its_ranked = False

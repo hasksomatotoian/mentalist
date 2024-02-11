@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from openai import OpenAI
 
-from model.post_group import PostGroup
+from model.topic import Topic
 from model.post_status import PostStatus
 from services.config_service import ConfigService
 from services.database_service import DatabaseService
@@ -22,7 +22,7 @@ class OpenAiService:
         )
 
     def rank_posts_by_title_and_summary(self):
-        user_messages = self.get_posts_without_rank_jsons()
+        user_messages = self._get_posts_without_rank_jsons()
 
         if user_messages is None:
             return
@@ -50,35 +50,44 @@ class OpenAiService:
                     except Exception as e:
                         logging.error(f"Error when ranking response \"{response}\": {e}")
 
-    def group_posts_by_title_and_summary(self):
-        user_message = self.get_posts_without_group_json()
-
-        if user_message is None:
+    def assign_topics(self):
+        posts_json = self._get_posts_without_topic_json()
+        if posts_json is None:
             return
 
+        user_message = f"# Posts\n{posts_json}\n\n"
+        user_message += f"# Topics\n{self._get_topics_json()}\n"
+
         # TODO: Read assistant name from Post
-        ai_assistant_id = self._get_assistant_id("F1 - Grouping")
+        ai_assistant_id = self._get_assistant_id("F1 - Topics")
 
         responses = self._get_responses_from_json(ai_assistant_id, user_message)
-        if responses is not None:
-            for response in responses:
-                try:
-                    post_group = PostGroup(title=response["GROUP_TITLE"], summary=response["GROUP_SUMMARY"])
-                    self.database_service.add_post_group(post_group)
-                    logging.info(f"Group \"{post_group}\" created successfully")
-                    post_ids = response["IDs"].split(',')
-                    for post_id_as_str in post_ids:
-                        post_id = int(post_id_as_str)
-                        post = self.database_service.get_post_by_id(post_id)
-                        if post is not None:
-                            post.post_group_id = post_group.id
-                            self.database_service.update_post(post)
-                            logging.info(f"Post \"{post}\" grouped successfully")
-                        else:
-                            logging.error(f"Could not find post with ID=\"{response["ID"]}\"")
+        if responses is None:
+            return
 
-                except Exception as e:
-                    logging.error(f"Error when grouping response \"{response}\": {e}")
+        for response in responses:
+            try:
+                topic_id = int(response["TOPIC_ID"])
+                if topic_id < 0:
+                    topic = Topic(title=response["TOPIC_TITLE"], summary=response["TOPIC_SUMMARY"])
+                    self.database_service.add_topic(topic)
+                    logging.info(f"Topic \"{topic}\" created successfully")
+                    topic_id = topic.id
+
+                if topic_id < 0:
+                    logging.error(f"Could not find topic with ID=\"{response["TOPIC_ID"]}\"")
+                    continue
+
+                post_ids = response["POST_IDs"].split(',')
+                for post_id_as_str in post_ids:
+                    post_id = int(post_id_as_str)
+                    self.database_service.add_post_x_topic(post_id, topic_id)
+                    self.database_service.add_post_x_topic(post_id, topic_id)
+
+            except Exception as e:
+                logging.error(f"Error when assigning topic to response \"{response}\": {e}")
+
+        self.database_service.update_topics_rank_and_published()
 
     def _get_assistant_id(self, assistant_name: str):
 
@@ -157,7 +166,7 @@ class OpenAiService:
 
         return None
 
-    def get_posts_without_rank_jsons(self):
+    def _get_posts_without_rank_jsons(self):
         messages = []
 
         logging.debug("Getting list of posts to rank")
@@ -189,10 +198,10 @@ class OpenAiService:
 
         return messages
 
-    def get_posts_without_group_json(self):
-        logging.debug("Getting list of posts to group")
-        posts = self.database_service.get_posts_without_group()
-        logging.info(f"Found {len(posts)} posts to group")
+    def _get_posts_without_topic_json(self):
+        logging.debug("Getting list of posts to assign a topic")
+        posts = self.database_service.get_posts_without_topic()
+        logging.info(f"Found {len(posts)} posts to assign a topic")
 
         if len(posts) < 1:
             return None
@@ -207,6 +216,22 @@ class OpenAiService:
         formatted_posts += "]}"
 
         return formatted_posts
+
+    def _get_topics_json(self):
+        logging.debug("Getting list of existing topics")
+        topics = self.database_service.get_topics()
+        logging.info(f"Found {len(topics)} existing topics")
+
+        topics_json = "{[\n"
+        for topic in topics:
+            topics_json += "\t{"
+            topics_json += f"\"TOPIC_ID\": \"{topic.id}\", "
+            topics_json += f"\"TOPIC_TITLE\": \"{html.escape(topic.title)}\","
+            topics_json += f"\"TOPIC_SUMMARY\": \"{html.escape(topic.summary)}\""
+            topics_json += "},\n"
+        topics_json += "]}"
+
+        return topics_json
 
 
 '''

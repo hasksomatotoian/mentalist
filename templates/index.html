@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mentalist</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>F1 News</h1>
+    {% for topic in topics %}
+    <h2 class="topic_title">
+        {{ topic.title }}
+
+        <a href="{{ url_for('topic_read', topic_id=topic.id) }}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 20 20" class="icon__B4xp9 icon color--secondary__WX5GF ljI0g6jsFP9X8F24pLQf"><path fill="currentColor" fill-rule="nonzero" d="M20.036 5.474a.75.75 0 0 1 1.142.967l-.071.085-11.786 12a.75.75 0 0 1-.986.074l-.084-.074-5.358-5.455a.75.75 0 0 1 .987-1.124l.084.073 4.822 4.909z"></path></svg>
+        </a>
+    </h2>
+
+    {% for post in topic.posts %}
+    <p>
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 20 20" class="icon__B4xp9 icon color--tertiary__JGhS2 ljI0g6jsFP9X8F24pLQf"><path fill="currentColor" fill-rule="nonzero" d="M13 2.357H7a2.5 2.5 0 0 0-2.5 2.5v13l.007.084a.5.5 0 0 0 .723.36l4.775-2.478 4.764 2.478a.5.5 0 0 0 .731-.444v-13a2.5 2.5 0 0 0-2.5-2.5m0 1 .144.007A1.5 1.5 0 0 1 14.5 4.857v12.176l-4.263-2.217-.09-.036a.5.5 0 0 0-.37.036L5.5 17.034V4.857a1.5 1.5 0 0 1 1.5-1.5z"></path></svg>
+        &nbsp;
+        <a href="{{ url_for('post_read', post_id=post.id) }}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 20 20" class="icon__B4xp9 icon color--secondary__WX5GF ljI0g6jsFP9X8F24pLQf"><path fill="currentColor" fill-rule="nonzero" d="M20.036 5.474a.75.75 0 0 1 1.142.967l-.071.085-11.786 12a.75.75 0 0 1-.986.074l-.084-.074-5.358-5.455a.75.75 0 0 1 .987-1.124l.084.073 4.822 4.909z"></path></svg>
+        </a>
+        &nbsp;
+        <a href="{{ post.link }}" target="_blank" class="{{ 'read' if post.read else 'unread' }}">
+            [{{ post.ai_rank }}]
+            &nbsp;
+            {{ post.title }}
+        </a>
+    </p>
+    {% endfor %}
+
+    {% endfor %}
+</body>
+</html>

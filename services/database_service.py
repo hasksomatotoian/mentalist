@@ -4,11 +4,13 @@ from datetime import datetime
 
 from model.assistant import Assistant
 from model.post import Post
-from model.post_group import PostGroup
+from model.topic import Topic
 from model.post_status import PostStatus
 from model.rss_feed import RssFeed
 from services.config_service import ConfigService
 
+
+# region Helper Methods
 
 def _datetime_to_text(datetime_value: datetime):
     if datetime_value is None:
@@ -38,14 +40,22 @@ def _int_to_bool(int_value: int):
         return int_value != 0
 
 
+# endregion
+
 class DatabaseService:
+
+    # region _Private Methods
+
     def __init__(self, config_service: ConfigService):
         self.connection = sqlite3.connect(config_service.database_filename)
         self.cursor = self.connection.cursor()
-        self.create_db()
-        self.create_data()
+        self._create_db()
+        self._create_data()
 
-    def create_db(self):
+    def __del__(self):
+        self.connection.close()
+
+    def _create_db(self):
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS rss_feeds (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,17 +80,29 @@ class DatabaseService:
                 ai_fileid TEXT,
                 ai_rank INTEGER NOT NULL,
                 ai_summary TEXT,
-                post_group_id INTEGER
+                read INTEGER,
+                saved INTEGER
             );
         """)
         self._execute_sql("""
-            CREATE TABLE IF NOT EXISTS post_groups (
+            CREATE TABLE IF NOT EXISTS topics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 latest_post_published TEXT,
                 best_post_ai_rank INTEGER
             );
+        """)
+        self._execute_sql("""
+            CREATE TABLE IF NOT EXISTS posts_x_topics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                topic_id INTEGER NOT NULL
+            );
+        """)
+        self._execute_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS posts_x_topics_unique 
+            ON posts_x_topics(post_id, topic_id);
         """)
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS assistants (
@@ -98,19 +120,39 @@ class DatabaseService:
             );
         """)
 
-    def create_data(self):
+    def _create_data(self):
         self.add_rss_feed(RssFeed(link="https://www.formula1.com/content/fom-website/en/latest/all.xml"))
         self.add_rss_feed(RssFeed(link="http://www1.skysports.com/feeds/12433/news.xml"))
+        self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
         # self.add_rss_feed(RssFeed(link="http://www.f1-fansite.com/feed/"))
         # self.add_rss_feed(RssFeed(link="http://gpf1.cz/feed/"))
-        # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
 
         self.add_assistant(Assistant(name="F1 Assistant", description="",
                                      instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-turbo-preview",
                                      needs_code_interpreter=False, needs_retrieval=False))
-        self.add_assistant(Assistant(name="F1 - Grouping", description="",
-                                     instructions_filename="./instructions/F1_GROUPING.md", model="gpt-4-turbo-preview",
+        self.add_assistant(Assistant(name="F1 - Topics", description="",
+                                     instructions_filename="./instructions/F1_TOPICS.md", model="gpt-4-turbo-preview",
                                      needs_code_interpreter=False, needs_retrieval=False))
+
+    def _execute_sql(self, sql, data=None):
+        cursor = None
+        try:
+            if data is None:
+                cursor = self.cursor.execute(sql)
+            else:
+                cursor = self.cursor.execute(sql, data)
+            self.connection.commit()
+        except sqlite3.Error as e:
+            print(f"Database error: {e}\nSQL:{sql}")
+            self.connection.rollback()
+        except Exception as e:
+            print(f"Exception in _query: {e}\nSQL:{sql}")
+            self.connection.rollback()
+        return cursor
+
+    # endregion
+
+    # region Assistant
 
     def add_assistant(self, assistant: Assistant):
         sql = """
@@ -160,6 +202,193 @@ class DatabaseService:
                 assistant.checksum, assistant.id)
         self._execute_sql(sql, data)
 
+    # endregion
+
+    # region Post
+
+    def add_post(self, post: Post):
+        sql = """
+            INSERT OR IGNORE INTO posts
+                (link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
+                ai_fileid, ai_rank, ai_summary, read, saved)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+        """
+        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
+                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
+                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary,
+                _bool_to_int(post.read), _bool_to_int(post.saved))
+        cursor = self._execute_sql(sql, data)
+        post.id = cursor.lastrowid
+
+    def update_post(self, post: Post):
+        sql = """
+            UPDATE posts
+            SET
+                link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, status=?, filename=?, last_error=?,
+                ai_fileid=?, ai_rank=?, ai_summary=?, read=?, saved=?
+            WHERE id = ?
+        """
+        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
+                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
+                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, _bool_to_int(post.read),
+                _bool_to_int(post.saved), post.id)
+        self._execute_sql(sql, data)
+
+    def get_post_by_id(self, post_id: int):
+        posts = self._get_posts(f"id = {post_id}")
+        if len(posts) > 0:
+            return posts[0]
+        return None
+
+    def get_posts_by_topic_id(self, topic_id: int):
+        return self._get_posts(f"""
+              posts.id IN (SELECT posts_x_topics.post_id FROM posts_x_topics WHERE posts_x_topics.topic_id = {topic_id})
+          """)
+
+    def get_posts_to_download(self):
+        return self._get_posts(f"status = {PostStatus.INIT.value} AND last_error IS NULL")
+
+    def get_posts_to_upload(self):
+        return self._get_posts(f"status = {PostStatus.DOWNLOADED.value}")
+
+    def get_posts_to_rank(self):
+        return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
+
+    def get_posts_without_rank(self):
+        return self._get_posts("ai_rank = 0")
+
+    def get_posts_without_topic(self):
+        return self._get_posts("""
+            (SELECT COUNT(*) FROM posts_x_topics WHERE posts_x_topics.post_id = posts.id) = 0
+        """)
+
+    def _get_posts(self, where: str, order_by: str = "id"):
+        self.cursor.execute(f"""
+            SELECT 
+                id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
+                ai_fileid, ai_rank, ai_summary, read, saved
+            FROM posts
+            WHERE {where}
+            ORDER BY {order_by}
+        """)
+        rows = self.cursor.fetchall()
+        posts = []
+        for row in rows:
+            post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
+                        published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
+                        rss_feed_id=row[6], status=PostStatus(row[7]), filename=row[8], last_error=row[9],
+                        ai_fileid=row[10], ai_rank=row[11], ai_summary=row[12], read=_int_to_bool(row[13]),
+                        saved=_int_to_bool(row[14]))
+            posts.append(post)
+        return posts
+
+    # endregion
+
+    # region Topic
+
+    def add_topic(self, topic: Topic):
+        sql = """
+            INSERT INTO topics
+                (title, summary, latest_post_published, best_post_ai_rank)
+            VALUES(?, ?, ?, ?)
+        """
+        data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
+                topic.best_post_ai_rank)
+        cursor = self._execute_sql(sql, data)
+        topic.id = cursor.lastrowid
+
+    def get_topic_by_id(self, topic_id: int):
+        topics = self._get_topics(f"id={topic_id}", "id")
+        if len(topics) > 0:
+            return topics[0]
+        return None
+
+    def get_topics(self):
+        return self._get_topics("1=1", "id DESC")
+
+    def get_topics_for_view(self):
+        topics = self._get_topics("best_post_ai_rank > 0", "best_post_ai_rank, latest_post_published DESC")
+        for topic in topics:
+            topic.posts = self._get_posts(f"""
+                posts.id IN (
+                    SELECT posts_x_topics.post_id 
+                    FROM posts_x_topics 
+                    WHERE posts_x_topics.topic_id = {topic.id}
+                )
+            """, "ai_rank, published DESC")
+        return topics
+
+    def update_topic(self, topic: Topic):
+        sql = """
+            UPDATE topics SET 
+                title=?, summary=?, latest_post_published=?, best_post_ai_rank=?
+            WHERE id=?
+        """
+        data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
+                topic.best_post_ai_rank, topic.id)
+        self._execute_sql(sql, data)
+
+    def update_topics_rank_and_published(self):
+        sql = """
+            UPDATE topics
+            SET
+                best_post_ai_rank = (
+                    SELECT MIN(posts.ai_rank) 
+                    FROM posts
+                    JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
+                    WHERE 
+                        posts_x_topics.topic_id = topics.id
+                        AND posts.ai_rank > 0
+                        AND posts.read = 0
+                ),
+                latest_post_published = (
+                    SELECT MAX(posts.published) 
+                    FROM posts
+                    JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
+                    WHERE 
+                        posts_x_topics.topic_id = topics.id
+                        AND posts.ai_rank > 0
+                        AND posts.read = 0
+                )
+        """
+        self._execute_sql(sql)
+
+    def _get_topics(self, where: str, order_by):
+        sql = f"""
+            SELECT
+                id, title, summary, latest_post_published, best_post_ai_rank
+            FROM topics
+            WHERE {where}
+            ORDER BY {order_by}
+            """
+        self.cursor.execute(sql)
+        rows = self.cursor.fetchall()
+        topics = []
+        for row in rows:
+            topic = Topic(topic_id=row[0], title=row[1], summary=row[2],
+                          latest_post_published=_text_to_datetime(row[3]),
+                          best_post_ai_rank=row[4])
+            topics.append(topic)
+        return topics
+
+    # endregion
+
+    # region Posts_x_Topics
+
+    def add_post_x_topic(self, post_id: int, topic_id: int):
+        sql = """
+            INSERT OR IGNORE INTO posts_x_topics
+                (post_id, topic_id)
+            VALUES
+                (?, ?) 
+        """
+        data = (post_id, topic_id)
+        self._execute_sql(sql, data)
+
+    # endregion
+
+    # region RssFeed
     def add_rss_feed(self, rss_feed: RssFeed):
         sql = """
             INSERT OR IGNORE INTO rss_feeds(link, title, last_update, last_error)
@@ -189,124 +418,4 @@ class DatabaseService:
             rss_feeds.append(rss_feed)
         return rss_feeds
 
-    def add_post(self, post: Post):
-        sql = """
-            INSERT OR IGNORE INTO posts
-                (link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary, post_group_id)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-        """
-        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, post.post_group_id)
-        cursor = self._execute_sql(sql, data)
-        post.id = cursor.lastrowid
-
-    def get_posts_to_download(self):
-        return self._get_posts(f"status = {PostStatus.INIT.value} AND last_error IS NULL")
-
-    def get_posts_to_upload(self):
-        return self._get_posts(f"status = {PostStatus.DOWNLOADED.value}")
-
-    def get_posts_to_rank(self):
-        return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
-
-    def get_posts_without_rank(self):
-        return self._get_posts("ai_rank = 0")
-
-    def get_posts_without_group(self):
-        return self._get_posts("post_group_id IS NULL")
-
-    def get_post_by_id(self, post_id: int):
-        posts = self._get_posts(f"id = {post_id}")
-        if len(posts) > 0:
-            return posts[0]
-        return None
-
-    def _get_posts(self, where: str):
-        self.cursor.execute("""
-            SELECT 
-                id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary, post_group_id
-            FROM posts
-            WHERE
-        """ + where)
-        rows = self.cursor.fetchall()
-        posts = []
-        for row in rows:
-            post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
-                        published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
-                        rss_feed_id=row[6], status=PostStatus(row[7]), filename=row[8], last_error=row[9],
-                        ai_fileid=row[10], ai_rank=row[11], ai_summary=row[12], post_group_id=row[13])
-            posts.append(post)
-        return posts
-
-    def update_post(self, post):
-        sql = """
-            UPDATE posts
-            SET
-                link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, status=?, filename=?, last_error=?,
-                ai_fileid=?, ai_rank=?, ai_summary=?, post_group_id=?
-            WHERE id = ?
-        """
-        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, post.post_group_id, post.id)
-        self._execute_sql(sql, data)
-
-    def add_post_group(self, post_group: PostGroup):
-        sql = """
-            INSERT INTO post_groups
-                (title, summary, latest_post_published, best_post_ai_rank)
-            VALUES(?, ?, ?, ?)
-        """
-        data = (post_group.title, post_group.summary, _datetime_to_text(post_group.latest_post_published),
-                post_group.best_post_ai_rank)
-        cursor = self._execute_sql(sql, data)
-        post_group.id = cursor.lastrowid
-
-    def get_post_groups(self):
-        sql = """
-            SELECT
-                id, title, summary, latest_post_published, best_post_ai_rank
-            FROM post_groups
-            """
-        self.cursor.execute(sql)
-        rows = self.cursor.fetchall()
-        if len(rows) > 0:
-            row = rows[0]
-            post_group = PostGroup(post_group_id=row[0], title=row[1], summary=row[2],
-                                   latest_post_published=_text_to_datetime(row[3]),
-                                   best_post_ai_rank=row[4])
-            return post_group
-        return None
-
-    def update_post_group(self, post_group: PostGroup):
-        sql = """
-            UPDATE post_groups SET 
-                title=?, summary=?, latest_post_published=?, best_post_ai_rank=?
-            WHERE id=?
-        """
-        data = (post_group.title, post_group.summary, _datetime_to_text(post_group.latest_post_published),
-                post_group.best_post_ai_rank, post_group.id)
-        self._execute_sql(sql, data)
-
-    def _execute_sql(self, sql, data=None):
-        cursor = None
-        try:
-            if data is None:
-                cursor = self.cursor.execute(sql)
-            else:
-                cursor = self.cursor.execute(sql, data)
-            self.connection.commit()
-        except sqlite3.Error as e:
-            print(f"Database error: {e}\nSQL:{sql}")
-            self.connection.rollback()
-        except Exception as e:
-            print(f"Exception in _query: {e}\nSQL:{sql}")
-            self.connection.rollback()
-        return cursor
-
-    def __del__(self):
-        self.connection.close()
+    # endregion

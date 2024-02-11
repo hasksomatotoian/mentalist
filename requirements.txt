@@ -1,4 +1,5 @@
 feedparser
+flask
 openai
 pdfkit
 python-dotenv
