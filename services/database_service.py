@@ -78,7 +78,7 @@ class DatabaseService:
                 filename TEXT,
                 last_error TEXT,
                 ai_fileid TEXT,
-                ai_rank INTEGER NOT NULL,
+                ai_rating INTEGER NOT NULL,
                 ai_summary TEXT,
                 read INTEGER,
                 saved INTEGER
@@ -90,7 +90,7 @@ class DatabaseService:
                 title TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 latest_post_published TEXT,
-                best_post_ai_rank INTEGER
+                best_post_ai_rating INTEGER
             );
         """)
         self._execute_sql("""
@@ -210,13 +210,13 @@ class DatabaseService:
         sql = """
             INSERT OR IGNORE INTO posts
                 (link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary, read, saved)
+                ai_fileid, ai_rating, ai_summary, read, saved)
             VALUES
                 (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
                 _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary,
+                post.last_error, post.ai_fileid, post.ai_rating, post.ai_summary,
                 _bool_to_int(post.read), _bool_to_int(post.saved))
         cursor = self._execute_sql(sql, data)
         post.id = cursor.lastrowid
@@ -226,12 +226,12 @@ class DatabaseService:
             UPDATE posts
             SET
                 link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, status=?, filename=?, last_error=?,
-                ai_fileid=?, ai_rank=?, ai_summary=?, read=?, saved=?
+                ai_fileid=?, ai_rating=?, ai_summary=?, read=?, saved=?
             WHERE id = ?
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
                 _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rank, post.ai_summary, _bool_to_int(post.read),
+                post.last_error, post.ai_fileid, post.ai_rating, post.ai_summary, _bool_to_int(post.read),
                 _bool_to_int(post.saved), post.id)
         self._execute_sql(sql, data)
 
@@ -252,11 +252,11 @@ class DatabaseService:
     def get_posts_to_upload(self):
         return self._get_posts(f"status = {PostStatus.DOWNLOADED.value}")
 
-    def get_posts_to_rank(self):
+    def get_posts_to_rate(self):
         return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
 
-    def get_posts_without_rank(self):
-        return self._get_posts("ai_rank = 0")
+    def get_posts_without_rating(self):
+        return self._get_posts("ai_rating = 0")
 
     def get_posts_without_topic(self):
         return self._get_posts("""
@@ -267,7 +267,7 @@ class DatabaseService:
         self.cursor.execute(f"""
             SELECT 
                 id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rank, ai_summary, read, saved
+                ai_fileid, ai_rating, ai_summary, read, saved
             FROM posts
             WHERE {where}
             ORDER BY {order_by}
@@ -278,7 +278,7 @@ class DatabaseService:
             post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
                         published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
                         rss_feed_id=row[6], status=PostStatus(row[7]), filename=row[8], last_error=row[9],
-                        ai_fileid=row[10], ai_rank=row[11], ai_summary=row[12], read=_int_to_bool(row[13]),
+                        ai_fileid=row[10], ai_rating=row[11], ai_summary=row[12], read=_int_to_bool(row[13]),
                         saved=_int_to_bool(row[14]))
             posts.append(post)
         return posts
@@ -290,11 +290,11 @@ class DatabaseService:
     def add_topic(self, topic: Topic):
         sql = """
             INSERT INTO topics
-                (title, summary, latest_post_published, best_post_ai_rank)
+                (title, summary, latest_post_published, best_post_ai_rating)
             VALUES(?, ?, ?, ?)
         """
         data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rank)
+                topic.best_post_ai_rating)
         cursor = self._execute_sql(sql, data)
         topic.id = cursor.lastrowid
 
@@ -308,7 +308,7 @@ class DatabaseService:
         return self._get_topics("1=1", "id DESC")
 
     def get_topics_for_view(self):
-        topics = self._get_topics("best_post_ai_rank > 0", "best_post_ai_rank, latest_post_published DESC")
+        topics = self._get_topics("best_post_ai_rating > 0", "best_post_ai_rating, latest_post_published DESC")
         for topic in topics:
             topic.posts = self._get_posts(f"""
                 posts.id IN (
@@ -316,30 +316,30 @@ class DatabaseService:
                     FROM posts_x_topics 
                     WHERE posts_x_topics.topic_id = {topic.id}
                 )
-            """, "ai_rank, published DESC")
+            """, "ai_rating, published DESC")
         return topics
 
     def update_topic(self, topic: Topic):
         sql = """
             UPDATE topics SET 
-                title=?, summary=?, latest_post_published=?, best_post_ai_rank=?
+                title=?, summary=?, latest_post_published=?, best_post_ai_rating=?
             WHERE id=?
         """
         data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rank, topic.id)
+                topic.best_post_ai_rating, topic.id)
         self._execute_sql(sql, data)
 
-    def update_topics_rank_and_published(self):
+    def update_topics_rating_and_published(self):
         sql = """
             UPDATE topics
             SET
-                best_post_ai_rank = (
-                    SELECT MIN(posts.ai_rank) 
+                best_post_ai_rating = (
+                    SELECT MIN(posts.ai_rating) 
                     FROM posts
                     JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
                     WHERE 
                         posts_x_topics.topic_id = topics.id
-                        AND posts.ai_rank > 0
+                        AND posts.ai_rating > 0
                         AND posts.read = 0
                 ),
                 latest_post_published = (
@@ -348,7 +348,7 @@ class DatabaseService:
                     JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
                     WHERE 
                         posts_x_topics.topic_id = topics.id
-                        AND posts.ai_rank > 0
+                        AND posts.ai_rating > 0
                         AND posts.read = 0
                 )
         """
@@ -357,7 +357,7 @@ class DatabaseService:
     def _get_topics(self, where: str, order_by):
         sql = f"""
             SELECT
-                id, title, summary, latest_post_published, best_post_ai_rank
+                id, title, summary, latest_post_published, best_post_ai_rating
             FROM topics
             WHERE {where}
             ORDER BY {order_by}
@@ -368,7 +368,7 @@ class DatabaseService:
         for row in rows:
             topic = Topic(topic_id=row[0], title=row[1], summary=row[2],
                           latest_post_published=_text_to_datetime(row[3]),
-                          best_post_ai_rank=row[4])
+                          best_post_ai_rating=row[4])
             topics.append(topic)
         return topics
 

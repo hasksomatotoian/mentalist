@@ -21,8 +21,8 @@ class OpenAiService:
             api_key=config_service.openai_api_key
         )
 
-    def rank_posts_by_title_and_summary(self):
-        user_messages = self._get_posts_without_rank_jsons()
+    def rate_posts_by_title_and_summary(self):
+        user_messages = self._get_posts_without_rating_jsons()
 
         if user_messages is None:
             return
@@ -38,17 +38,17 @@ class OpenAiService:
                         post_id = int(response["ID"])
                         post = self.database_service.get_post_by_id(post_id)
                         if post is not None:
-                            post.ai_rank = int(response["RATING"])
+                            post.ai_rating = int(response["RATING"])
                             post.ai_summary = response["RECOMMENDATION"]
-                            post.status = PostStatus.RANKED
+                            post.status = PostStatus.RATED
                             post.last_error = None
                             self.database_service.update_post(post)
-                            logging.info(f"Post \"{post}\" ranked successfully")
+                            logging.info(f"Post \"{post}\" rated successfully")
                         else:
                             logging.error(f"Could not find post with ID=\"{response["ID"]}\"")
 
                     except Exception as e:
-                        logging.error(f"Error when ranking response \"{response}\": {e}")
+                        logging.error(f"Error when rating response \"{response}\": {e}")
 
     def assign_topics(self):
         posts_json = self._get_posts_without_topic_json()
@@ -87,7 +87,7 @@ class OpenAiService:
             except Exception as e:
                 logging.error(f"Error when assigning topic to response \"{response}\": {e}")
 
-        self.database_service.update_topics_rank_and_published()
+        self.database_service.update_topics_rating_and_published()
 
     def _get_assistant_id(self, assistant_name: str):
 
@@ -166,12 +166,12 @@ class OpenAiService:
 
         return None
 
-    def _get_posts_without_rank_jsons(self):
+    def _get_posts_without_rating_jsons(self):
         messages = []
 
-        logging.debug("Getting list of posts to rank")
-        posts = self.database_service.get_posts_without_rank()
-        logging.info(f"Found {len(posts)} posts to rank")
+        logging.debug("Getting list of posts to rate")
+        posts = self.database_service.get_posts_without_rating()
+        logging.info(f"Found {len(posts)} posts to rate")
 
         if len(posts) < 1:
             return None

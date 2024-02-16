@@ -24,7 +24,7 @@ def post_read(post_id: int):
     if post is not None:
         post.read = not post.read
         db_service.update_post(post)
-        db_service.update_topics_rank_and_published()
+        db_service.update_topics_rating_and_published()
 
     return index()
 
@@ -37,7 +37,7 @@ def topic_read(topic_id: int):
         if not post.read:
             post.read = True
             db_service.update_post(post)
-    db_service.update_topics_rank_and_published()
+    db_service.update_topics_rating_and_published()
 
     return index()
 

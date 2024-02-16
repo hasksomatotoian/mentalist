@@ -18,4 +18,4 @@ class ConfigService:
         self.openai_posts_batch_size = 20
 
         self.delete_local_post_file_after_its_uploaded = False
-        self.delete_uploaded_post_file_after_its_ranked = False
+        self.delete_uploaded_post_file_after_its_rated = False
