@@ -7,6 +7,13 @@ from model.post import Post
 from services.database_service import DatabaseService
 
 
+def _remove_self_promotion(summary: str) -> str:
+    start = summary.find("\n<p>The post <a href=\"https://formulaspy.com")
+    if start < 0:
+        return summary
+    return summary[:start]
+
+
 class RssFeedService:
     def __init__(self, database_service: DatabaseService):
         self.database_service = database_service
@@ -40,7 +47,8 @@ class RssFeedService:
                         )
                     else:
                         published = None
-                    post = Post(entry.link, html.unescape(entry.title), html.unescape(entry.summary),
+                    post = Post(entry.link, html.unescape(entry.title),
+                                _remove_self_promotion(html.unescape(entry.summary)),
                                 published, rss_feed.id)
                     self.database_service.add_post(post)
 

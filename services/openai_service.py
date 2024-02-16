@@ -89,6 +89,38 @@ class OpenAiService:
 
         self.database_service.update_topics_rating_and_published()
 
+    def create_topics(self):
+        user_message = self._get_posts_without_topic_json()
+        if user_message is None:
+            return
+
+        # print(user_message)
+
+        # TODO: Read assistant name from Post
+        ai_assistant_id = self._get_assistant_id("F1 - News")
+
+        responses = self._get_responses_from_json(ai_assistant_id, user_message)
+        if responses is None:
+            return
+
+        for response in responses:
+            try:
+                topic = Topic(title=response["TOPIC_TITLE"], summary=response["TOPIC_SUMMARY"],
+                              ai_analysis=response["TOPIC_ANALYSIS"], ai_rating=int(response["TOPIC_RATING"]))
+                self.database_service.add_topic(topic)
+                logging.info(f"Topic \"{topic}\" created successfully")
+
+                post_ids = response["POST_IDs"].split(',')
+                for post_id_as_str in post_ids:
+                    post_id = int(post_id_as_str)
+                    self.database_service.add_post_x_topic(post_id, topic.id)
+                    self.database_service.add_post_x_topic(post_id, topic.id)
+
+            except Exception as e:
+                logging.error(f"Error when assigning topic to response \"{response}\": {e}")
+
+        self.database_service.update_topics_rating_and_published()
+
     def _get_assistant_id(self, assistant_name: str):
 
         assistant = self.database_service.get_assistant(assistant_name)
@@ -115,12 +147,13 @@ class OpenAiService:
             self.database_service.update_assistant(assistant)
 
         elif assistant.checksum != current_checksum:
-            self.client.beta.assistants.update(
+            ai_assistant = self.client.beta.assistants.update(
                 assistant_id=assistant.ai_id,
                 instructions=instructions,
                 model=assistant.model
             )
 
+            assistant.ai_id = ai_assistant.id
             assistant.last_update = assistant.created
             assistant.checksum = current_checksum
             self.database_service.update_assistant(assistant)

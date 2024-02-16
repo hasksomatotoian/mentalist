@@ -14,5 +14,6 @@ if __name__ == '__main__':
     rss_feed_service.get_latest_posts()
 
     openai_service = OpenAiService(database_service=db_service, config_service=cfg_service)
-    openai_service.rate_posts_by_title_and_summary()
-    openai_service.assign_topics()
+    # openai_service.rate_posts_by_title_and_summary()
+    # openai_service.assign_topics()
+    openai_service.create_topics()

@@ -90,7 +90,12 @@ class DatabaseService:
                 title TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 latest_post_published TEXT,
-                best_post_ai_rating INTEGER
+                best_post_ai_rating INTEGER,
+                my_rating INTEGER,
+                ai_rating INTEGER,
+                ai_analysis TEXT,
+                read INTEGER,
+                saved INTEGER
             );
         """)
         self._execute_sql("""
@@ -132,6 +137,9 @@ class DatabaseService:
                                      needs_code_interpreter=False, needs_retrieval=False))
         self.add_assistant(Assistant(name="F1 - Topics", description="",
                                      instructions_filename="./instructions/F1_TOPICS.md", model="gpt-4-turbo-preview",
+                                     needs_code_interpreter=False, needs_retrieval=False))
+        self.add_assistant(Assistant(name="F1 - News", description="",
+                                     instructions_filename="./instructions/F1_NEW_TOPICS.md", model="gpt-4-turbo-preview",
                                      needs_code_interpreter=False, needs_retrieval=False))
 
     def _execute_sql(self, sql, data=None):
@@ -290,11 +298,13 @@ class DatabaseService:
     def add_topic(self, topic: Topic):
         sql = """
             INSERT INTO topics
-                (title, summary, latest_post_published, best_post_ai_rating)
-            VALUES(?, ?, ?, ?)
+                (title, summary, latest_post_published, best_post_ai_rating, my_rating, ai_rating, ai_analysis, read,
+                 saved)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rating)
+                topic.best_post_ai_rating, topic.my_rating, topic.ai_rating, topic.ai_analysis,
+                _bool_to_int(topic.read), _bool_to_int(topic.saved))
         cursor = self._execute_sql(sql, data)
         topic.id = cursor.lastrowid
 
@@ -322,11 +332,13 @@ class DatabaseService:
     def update_topic(self, topic: Topic):
         sql = """
             UPDATE topics SET 
-                title=?, summary=?, latest_post_published=?, best_post_ai_rating=?
+                title=?, summary=?, latest_post_published=?, best_post_ai_rating=?, my_rating=?, ai_rating=?, 
+                ai_analysis=?, read=?, saved=?
             WHERE id=?
         """
         data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rating, topic.id)
+                topic.best_post_ai_rating, topic.my_rating, topic.ai_analysis, _bool_to_int(topic.read),
+                _bool_to_int(topic.saved), topic.id)
         self._execute_sql(sql, data)
 
     def update_topics_rating_and_published(self):
@@ -357,7 +369,8 @@ class DatabaseService:
     def _get_topics(self, where: str, order_by):
         sql = f"""
             SELECT
-                id, title, summary, latest_post_published, best_post_ai_rating
+                id, title, summary, latest_post_published, best_post_ai_rating, my_rating, ai_rating, ai_analysis, read,
+                saved
             FROM topics
             WHERE {where}
             ORDER BY {order_by}
@@ -368,7 +381,8 @@ class DatabaseService:
         for row in rows:
             topic = Topic(topic_id=row[0], title=row[1], summary=row[2],
                           latest_post_published=_text_to_datetime(row[3]),
-                          best_post_ai_rating=row[4])
+                          best_post_ai_rating=row[4], my_rating=row[5], ai_rating=row[6], ai_analysis=row[7],
+                          read=_int_to_bool(row[8]), saved=_int_to_bool(row[9]))
             topics.append(topic)
         return topics
 
