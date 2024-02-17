@@ -1,0 +1,14 @@
+{
+  "areas": [
+    {
+      "name": "F1",
+      "title": "Formula 1",
+      "instructions_filename": "./instructions/F1_NEW_TOPICS.md",
+      "model": "gpt-4-turbo-preview",
+      "rss_feeds": [
+        "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+        "http://www1.skysports.com/feeds/12433/news.xml"
+      ]
+    }
+  ]
+}

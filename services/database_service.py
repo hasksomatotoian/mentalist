@@ -1,8 +1,9 @@
 import sqlite3
 
 from datetime import datetime
+from sqlite3 import Cursor
 
-from model.assistant import Assistant
+from model.area import Area
 from model.post import Post
 from model.topic import Topic
 from model.post_status import PostStatus
@@ -50,12 +51,28 @@ class DatabaseService:
         self.connection = sqlite3.connect(config_service.database_filename)
         self.cursor = self.connection.cursor()
         self._create_db()
-        self._create_data()
 
     def __del__(self):
         self.connection.close()
 
     def _create_db(self):
+        self._execute_sql("""
+            CREATE TABLE IF NOT EXISTS areas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL,
+                instructions_filename TEXT NOT NULL,
+                model TEXT NOT NULL,
+                needs_code_interpreter INTEGER NOT NULL,
+                needs_retrieval INTEGER NOT NULL,
+                ai_id TEXT,
+                ai_created TEXT,
+                ai_last_update TEXT,
+                checksum TEXT,
+                priority INTEGER NOT NULL,
+                enabled INTEGER NOT NULL
+            );
+        """)
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS rss_feeds (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +83,16 @@ class DatabaseService:
                 last_error TEXT
             );
         """)
+        self._execute_sql("""
+            CREATE TABLE IF NOT EXISTS areas_x_rss_feeds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                area_id INTEGER NOT NULL,
+                rss_feed_id INTEGER NOT NULL,
+                priority INTEGER NOT NULL,
+                enabled INTEGER NOT NULL
+            );
+        """)
+
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,41 +137,8 @@ class DatabaseService:
             CREATE UNIQUE INDEX IF NOT EXISTS posts_x_topics_unique 
             ON posts_x_topics(post_id, topic_id);
         """)
-        self._execute_sql("""
-            CREATE TABLE IF NOT EXISTS assistants (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                instructions_filename TEXT NOT NULL,
-                model TEXT NOT NULL,
-                needs_code_interpreter INTEGER NOT NULL,
-                needs_retrieval INTEGER NOT NULL,
-                ai_id TEXT,
-                created TEXT,
-                last_update TEXT,
-                checksum TEXT
-            );
-        """)
 
-    def _create_data(self):
-        self.add_rss_feed(RssFeed(link="https://www.formula1.com/content/fom-website/en/latest/all.xml"))
-        self.add_rss_feed(RssFeed(link="http://www1.skysports.com/feeds/12433/news.xml"))
-        # self.add_rss_feed(RssFeed(link="http://www.f1reader.com/rss/f1r"))
-        # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
-        # self.add_rss_feed(RssFeed(link="https://www.f1-fansite.com/feed/"))
-
-        # self.add_assistant(Assistant(name="F1 Assistant", description="",
-        #                              instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-turbo-preview",
-        #                              needs_code_interpreter=False, needs_retrieval=False))
-        # self.add_assistant(Assistant(name="F1 - Topics", description="",
-        #                              instructions_filename="./instructions/F1_TOPICS.md", model="gpt-4-turbo-preview",
-        #                              needs_code_interpreter=False, needs_retrieval=False))
-        self.add_assistant(Assistant(name="F1 - News", description="",
-                                     instructions_filename="./instructions/F1_NEW_TOPICS.md",
-                                     model="gpt-4-turbo-preview",
-                                     needs_code_interpreter=False, needs_retrieval=False))
-
-    def _execute_sql(self, sql, data=None):
+    def _execute_sql(self, sql, data=None) -> Cursor:
         cursor = None
         try:
             if data is None:
@@ -162,28 +156,61 @@ class DatabaseService:
 
     # endregion
 
-    # region Assistant
+    def import_areas(self, areas: list[Area]):
+        self.disable_all_areas()
+        self.disable_all_rss_feeds()
 
-    def add_assistant(self, assistant: Assistant):
+        for area in areas:
+            existing_area = self.get_area_by_name(area.name)
+            if existing_area is None:
+                self.add_area(area)
+                area_id = area.id
+            else:
+                existing_area.name = area.name
+                existing_area.title = area.title
+                existing_area.instructions_filename = area.instructions_filename
+                existing_area.model = area.model
+                existing_area.priority = area.priority
+                existing_area.enabled = area.enabled
+                self.update_area(existing_area)
+                area_id = existing_area.id
+
+            rss_feed_priority = 0
+            for rss_feed in area.rss_feeds:
+                existing_rss_feed = self.get_rss_feed_by_link(rss_feed.link)
+                if existing_rss_feed is None:
+                    self.add_rss_feed(rss_feed)
+                    rss_feed_id = rss_feed.id
+                else:
+                    rss_feed_id = existing_rss_feed.id
+
+                rss_feed_priority += 1
+                self.add_or_update_areas_x_rss_feeds(area_id=area_id, rss_feed_id=rss_feed_id,
+                                                     priority=rss_feed_priority)
+
+
+    # region Area
+
+    def add_area(self, area: Area):
         sql = """
-            INSERT OR IGNORE INTO assistants
-                (name, description, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
-                ai_id, created, last_update, checksum)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO areas
+                (name, title, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
+                ai_id, ai_created, ai_last_update, checksum, priority, enabled)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        data = (assistant.name, assistant.description, assistant.instructions_filename, assistant.model,
-                _bool_to_int(assistant.needs_code_interpreter), _bool_to_int(assistant.needs_retrieval),
-                assistant.ai_id, _datetime_to_text(assistant.created), _datetime_to_text(assistant.last_update),
-                assistant.checksum)
+        data = (area.name, area.title, area.instructions_filename, area.model,
+                _bool_to_int(area.needs_code_interpreter), _bool_to_int(area.needs_retrieval),
+                area.ai_id, _datetime_to_text(area.ai_created), _datetime_to_text(area.ai_last_update),
+                area.checksum, area.priority, _bool_to_int(area.enabled))
         cursor = self._execute_sql(sql, data)
-        assistant.id = cursor.lastrowid
+        area.id = cursor.lastrowid
 
-    def get_assistant(self, name: str) -> Assistant | None:
+    def get_area_by_name(self, name: str) -> Area | None:
         sql = """
             SELECT
-                id, name, description, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
-                ai_id, created, last_update, checksum
-            FROM assistants
+                id, name, title, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
+                ai_id, ai_created, ai_last_update, checksum, priority, enabled
+            FROM areas
             WHERE
                 name=
         """ + f"\"{name}\""
@@ -191,26 +218,30 @@ class DatabaseService:
         rows = self.cursor.fetchall()
         if len(rows) > 0:
             row = rows[0]
-            assistant = Assistant(assistant_id=row[0], name=row[1], description=row[2], instructions_filename=row[3],
-                                  model=row[4], needs_code_interpreter=_int_to_bool(row[5]),
-                                  needs_retrieval=_int_to_bool(row[6]), ai_id=row[7],
-                                  created=_text_to_datetime(row[8]), last_update=_text_to_datetime(row[9]),
-                                  checksum=row[10])
+            assistant = Area(assistant_id=row[0], name=row[1], title=row[2], instructions_filename=row[3],
+                             model=row[4], needs_code_interpreter=_int_to_bool(row[5]),
+                             needs_retrieval=_int_to_bool(row[6]), ai_id=row[7],
+                             ai_created=_text_to_datetime(row[8]), ai_last_update=_text_to_datetime(row[9]),
+                             checksum=row[10], priority=row[11], enabled=_int_to_bool(row[12]))
             return assistant
         return None
 
-    def update_assistant(self, assistant):
+    def update_area(self, area: Area):
         sql = """
-            UPDATE assistants SET 
-                name=?, description=?, instructions_filename=?, model=?, needs_code_interpreter=?, needs_retrieval=?, 
-                ai_id=?, created=?, last_update=?, checksum=?
+            UPDATE areas SET 
+                name=?, title=?, instructions_filename=?, model=?, needs_code_interpreter=?, needs_retrieval=?, 
+                ai_id=?, ai_created=?, ai_last_update=?, checksum=?, priority=?, enabled=?
             WHERE id=?
         """
-        data = (assistant.name, assistant.description, assistant.instructions_filename, assistant.model,
-                _bool_to_int(assistant.needs_code_interpreter), _bool_to_int(assistant.needs_retrieval),
-                assistant.ai_id, _datetime_to_text(assistant.created), _datetime_to_text(assistant.last_update),
-                assistant.checksum, assistant.id)
+        data = (area.name, area.title, area.instructions_filename, area.model,
+                _bool_to_int(area.needs_code_interpreter), _bool_to_int(area.needs_retrieval),
+                area.ai_id, _datetime_to_text(area.ai_created), _datetime_to_text(area.ai_last_update),
+                area.checksum, area.priority, _bool_to_int(area.enabled), area.id)
         self._execute_sql(sql, data)
+
+    def disable_all_areas(self):
+        sql = "UPDATE areas SET enabled=0"
+        self._execute_sql(sql)
 
     # endregion
 
@@ -398,8 +429,9 @@ class DatabaseService:
             WHERE id=?
         """
         data = (
-        rss_feed.link, rss_feed.web_link, rss_feed.title, _datetime_to_text(rss_feed.last_update), rss_feed.last_error,
-        rss_feed.id)
+            rss_feed.link, rss_feed.web_link, rss_feed.title, _datetime_to_text(rss_feed.last_update),
+            rss_feed.last_error,
+            rss_feed.id)
         self._execute_sql(sql, data)
 
     def get_all_rss_feeds(self) -> list[RssFeed]:
@@ -411,8 +443,18 @@ class DatabaseService:
             return None
         return rss_feeds[0]
 
+    def get_rss_feed_by_link(self, link: str) -> RssFeed | None:
+        rss_feeds = self._get_rss_feeds(f"link='{link}'")
+        if len(rss_feeds) < 1:
+            return None
+        return rss_feeds[0]
+
     def _get_rss_feeds(self, where: str) -> list[RssFeed]:
-        self.cursor.execute(f"SELECT id, link, web_link, title, last_update, last_error FROM rss_feeds WHERE {where}")
+        self.cursor.execute(f"""
+            SELECT id, link, web_link, title, last_update, last_error
+            FROM rss_feeds 
+            WHERE {where}
+        """)
         rows = self.cursor.fetchall()
         rss_feeds = []
         for row in rows:
@@ -420,5 +462,24 @@ class DatabaseService:
                                last_update=_text_to_datetime(row[4]), last_error=row[5])
             rss_feeds.append(rss_feed)
         return rss_feeds
+
+    def disable_all_rss_feeds(self):
+        sql = "UPDATE areas_x_rss_feeds SET enabled = 0"
+        self._execute_sql(sql)
+
+    def add_or_update_areas_x_rss_feeds(self, area_id: int, rss_feed_id: int, priority: int):
+        sql = f"""
+            UPDATE areas_x_rss_feeds 
+            SET priority = {priority}, enabled = 1 
+            WHERE area_id = {area_id} AND rss_feed_id = {rss_feed_id}
+            """
+        cursor = self._execute_sql(sql)
+        if cursor.rowcount < 1:
+            sql = """
+                INSERT INTO areas_x_rss_feeds(area_id, rss_feed_id, priority, enabled)
+                VALUES(?, ?, ?, ?)
+            """
+            data = (area_id, rss_feed_id, priority, _bool_to_int(True))
+            self._execute_sql(sql, data)
 
     # endregion

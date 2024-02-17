@@ -56,7 +56,7 @@ class OpenAiService:
 
     def _get_assistant_id(self, assistant_name: str) -> str:
 
-        assistant = self.database_service.get_assistant(assistant_name)
+        assistant = self.database_service.get_area_by_name(assistant_name)
         with open(assistant.instructions_filename, 'r') as instructions_file:
             # Read the entire file content into a string
             instructions = instructions_file.read()
@@ -66,18 +66,18 @@ class OpenAiService:
         if assistant.ai_id is None:
             ai_assistant = self.client.beta.assistants.create(
                 name=assistant.name,
-                description=assistant.description,
+                description=assistant.title,
                 instructions=instructions,
                 model=assistant.model
                 # TODO: Handle tools
                 # tools=[{ "type": "retrieval" if assistant.needs_retrieval else "code_interpreter" if assistant.needs_code_interpreter else ""}]
             )
 
-            assistant.created = datetime.now().astimezone(timezone.utc)
-            assistant.last_update = assistant.created
+            assistant.ai_created = datetime.now().astimezone(timezone.utc)
+            assistant.ai_last_update = assistant.ai_created
             assistant.ai_id = ai_assistant.id
             assistant.checksum = current_checksum
-            self.database_service.update_assistant(assistant)
+            self.database_service.update_area(assistant)
 
         elif assistant.checksum != current_checksum:
             ai_assistant = self.client.beta.assistants.update(
@@ -87,9 +87,9 @@ class OpenAiService:
             )
 
             assistant.ai_id = ai_assistant.id
-            assistant.last_update = assistant.created
+            assistant.ai_last_update = assistant.ai_created
             assistant.checksum = current_checksum
-            self.database_service.update_assistant(assistant)
+            self.database_service.update_area(assistant)
 
         return assistant.ai_id
 
