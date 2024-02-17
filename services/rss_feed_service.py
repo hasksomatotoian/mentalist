@@ -3,6 +3,9 @@ import html
 import logging
 
 from datetime import datetime, timezone
+
+from bs4 import BeautifulSoup
+
 from model.post import Post
 from services.database_service import DatabaseService
 
@@ -14,11 +17,16 @@ def _remove_self_promotion(summary: str) -> str:
     return summary[:start]
 
 
+def _remove_html(summary: str) -> str:
+    soup = BeautifulSoup(summary, 'html.parser')
+    return soup.get_text(separator=' ', strip=True)
+
+
 class RssFeedService:
     def __init__(self, database_service: DatabaseService):
         self.database_service = database_service
 
-    def get_latest_posts(self):
+    def add_latest_posts(self):
         logging.debug("Getting list of RSS feeds")
         rss_feeds = self.database_service.get_all_rss_feeds()
         logging.info(f"Found {len(rss_feeds)} RSS feeds")
@@ -29,6 +37,7 @@ class RssFeedService:
                 feed = feedparser.parse(rss_feed.link)
 
                 rss_feed.title = feed.feed.title
+                rss_feed.web_link = feed.feed.link
 
                 logging.info(f"Processing new posts from \"{rss_feed}\"")
 
@@ -48,7 +57,7 @@ class RssFeedService:
                     else:
                         published = None
                     post = Post(entry.link, html.unescape(entry.title),
-                                _remove_self_promotion(html.unescape(entry.summary)),
+                                _remove_html(_remove_self_promotion(html.unescape(entry.summary))),
                                 published, rss_feed.id)
                     self.database_service.add_post(post)
 

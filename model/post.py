@@ -30,5 +30,7 @@ class Post:
         self.read = read
         self.saved = saved
 
+        self.rss_feed = None
+
     def __str__(self):
         return f"[{self.id}] {self.title} ({self.ai_rating})"

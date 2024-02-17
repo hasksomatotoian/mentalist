@@ -12,28 +12,28 @@ from services.config_service import ConfigService
 
 # region Helper Methods
 
-def _datetime_to_text(datetime_value: datetime):
+def _datetime_to_text(datetime_value: datetime) -> str | None:
     if datetime_value is None:
         return None
     else:
         return datetime_value.strftime('%Y-%m-%dT%H:%M:%S')
 
 
-def _text_to_datetime(text_value: str):
+def _text_to_datetime(text_value: str) -> datetime | None:
     if text_value is None:
         return None
     else:
         return datetime.strptime(text_value, '%Y-%m-%dT%H:%M:%S')
 
 
-def _bool_to_int(bool_value: bool):
+def _bool_to_int(bool_value: bool) -> int | None:
     if bool_value is None:
         return None
     else:
         return 1 if bool_value else 0
 
 
-def _int_to_bool(int_value: int):
+def _int_to_bool(int_value: int) -> bool | None:
     if int_value is None:
         return None
     else:
@@ -60,6 +60,7 @@ class DatabaseService:
             CREATE TABLE IF NOT EXISTS rss_feeds (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 link TEXT NOT NULL UNIQUE,
+                web_link TEXT,
                 title TEXT,
                 last_update TEXT,
                 last_error TEXT
@@ -128,18 +129,19 @@ class DatabaseService:
     def _create_data(self):
         self.add_rss_feed(RssFeed(link="https://www.formula1.com/content/fom-website/en/latest/all.xml"))
         self.add_rss_feed(RssFeed(link="http://www1.skysports.com/feeds/12433/news.xml"))
-        self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
-        # self.add_rss_feed(RssFeed(link="http://www.f1-fansite.com/feed/"))
-        # self.add_rss_feed(RssFeed(link="http://gpf1.cz/feed/"))
+        # self.add_rss_feed(RssFeed(link="http://www.f1reader.com/rss/f1r"))
+        # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
+        # self.add_rss_feed(RssFeed(link="https://www.f1-fansite.com/feed/"))
 
-        self.add_assistant(Assistant(name="F1 Assistant", description="",
-                                     instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-turbo-preview",
-                                     needs_code_interpreter=False, needs_retrieval=False))
-        self.add_assistant(Assistant(name="F1 - Topics", description="",
-                                     instructions_filename="./instructions/F1_TOPICS.md", model="gpt-4-turbo-preview",
-                                     needs_code_interpreter=False, needs_retrieval=False))
+        # self.add_assistant(Assistant(name="F1 Assistant", description="",
+        #                              instructions_filename="./instructions/F1_EXPERT.md", model="gpt-4-turbo-preview",
+        #                              needs_code_interpreter=False, needs_retrieval=False))
+        # self.add_assistant(Assistant(name="F1 - Topics", description="",
+        #                              instructions_filename="./instructions/F1_TOPICS.md", model="gpt-4-turbo-preview",
+        #                              needs_code_interpreter=False, needs_retrieval=False))
         self.add_assistant(Assistant(name="F1 - News", description="",
-                                     instructions_filename="./instructions/F1_NEW_TOPICS.md", model="gpt-4-turbo-preview",
+                                     instructions_filename="./instructions/F1_NEW_TOPICS.md",
+                                     model="gpt-4-turbo-preview",
                                      needs_code_interpreter=False, needs_retrieval=False))
 
     def _execute_sql(self, sql, data=None):
@@ -176,7 +178,7 @@ class DatabaseService:
         cursor = self._execute_sql(sql, data)
         assistant.id = cursor.lastrowid
 
-    def get_assistant(self, name: str):
+    def get_assistant(self, name: str) -> Assistant | None:
         sql = """
             SELECT
                 id, name, description, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
@@ -243,35 +245,18 @@ class DatabaseService:
                 _bool_to_int(post.saved), post.id)
         self._execute_sql(sql, data)
 
-    def get_post_by_id(self, post_id: int):
+    def get_post_by_id(self, post_id: int) -> Post | None:
         posts = self._get_posts(f"id = {post_id}")
         if len(posts) > 0:
             return posts[0]
         return None
 
-    def get_posts_by_topic_id(self, topic_id: int):
-        return self._get_posts(f"""
-              posts.id IN (SELECT posts_x_topics.post_id FROM posts_x_topics WHERE posts_x_topics.topic_id = {topic_id})
-          """)
-
-    def get_posts_to_download(self):
-        return self._get_posts(f"status = {PostStatus.INIT.value} AND last_error IS NULL")
-
-    def get_posts_to_upload(self):
-        return self._get_posts(f"status = {PostStatus.DOWNLOADED.value}")
-
-    def get_posts_to_rate(self):
-        return self._get_posts(f"status = {PostStatus.UPLOADED.value}")
-
-    def get_posts_without_rating(self):
-        return self._get_posts("ai_rating = 0")
-
-    def get_posts_without_topic(self):
+    def get_posts_without_topic(self) -> list[Post]:
         return self._get_posts("""
             (SELECT COUNT(*) FROM posts_x_topics WHERE posts_x_topics.post_id = posts.id) = 0
         """)
 
-    def _get_posts(self, where: str, order_by: str = "id"):
+    def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
         self.cursor.execute(f"""
             SELECT 
                 id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
@@ -308,17 +293,14 @@ class DatabaseService:
         cursor = self._execute_sql(sql, data)
         topic.id = cursor.lastrowid
 
-    def get_topic_by_id(self, topic_id: int):
+    def get_topic_by_id(self, topic_id: int) -> Topic | None:
         topics = self._get_topics(f"id={topic_id}", "id")
         if len(topics) > 0:
             return topics[0]
         return None
 
-    def get_topics(self):
-        return self._get_topics("1=1", "id DESC")
-
-    def get_topics_for_view(self):
-        topics = self._get_topics("best_post_ai_rating > 0", "best_post_ai_rating, latest_post_published DESC")
+    def get_topics_for_view(self) -> list[Topic]:
+        topics = self._get_topics("read = 0", "ai_rating, latest_post_published DESC")
         for topic in topics:
             topic.posts = self._get_posts(f"""
                 posts.id IN (
@@ -326,20 +308,10 @@ class DatabaseService:
                     FROM posts_x_topics 
                     WHERE posts_x_topics.topic_id = {topic.id}
                 )
-            """, "ai_rating, published DESC")
+            """, "rss_feed_id, published ASC")
+            for post in topic.posts:
+                post.rss_feed = self.get_rss_feed_by_id(post.rss_feed_id)
         return topics
-
-    def update_topic(self, topic: Topic):
-        sql = """
-            UPDATE topics SET 
-                title=?, summary=?, latest_post_published=?, best_post_ai_rating=?, my_rating=?, ai_rating=?, 
-                ai_analysis=?, read=?, saved=?
-            WHERE id=?
-        """
-        data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rating, topic.my_rating, topic.ai_analysis, _bool_to_int(topic.read),
-                _bool_to_int(topic.saved), topic.id)
-        self._execute_sql(sql, data)
 
     def update_topics_rating_and_published(self):
         sql = """
@@ -360,13 +332,19 @@ class DatabaseService:
                     JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
                     WHERE 
                         posts_x_topics.topic_id = topics.id
-                        AND posts.ai_rating > 0
-                        AND posts.read = 0
                 )
         """
         self._execute_sql(sql)
 
-    def _get_topics(self, where: str, order_by):
+    def toggle_topic_saved(self, topic_id):
+        sql = f"UPDATE topics SET saved = (1 - saved) WHERE id = {topic_id}"
+        self._execute_sql(sql)
+
+    def toggle_topic_read(self, topic_id):
+        sql = f"UPDATE topics SET read = (1 - read) WHERE id = {topic_id}"
+        self._execute_sql(sql)
+
+    def _get_topics(self, where: str, order_by) -> list[Topic]:
         sql = f"""
             SELECT
                 id, title, summary, latest_post_published, best_post_ai_rating, my_rating, ai_rating, ai_analysis, read,
@@ -405,30 +383,41 @@ class DatabaseService:
     # region RssFeed
     def add_rss_feed(self, rss_feed: RssFeed):
         sql = """
-            INSERT OR IGNORE INTO rss_feeds(link, title, last_update, last_error)
-            VALUES(?, ?, ?, ?)
+            INSERT OR IGNORE INTO rss_feeds(link, web_link, title, last_update, last_error)
+            VALUES(?, ?, ?, ?, ?)
         """
-        data = (rss_feed.link, rss_feed.title, _datetime_to_text(rss_feed.last_update), rss_feed.last_error)
+        data = (rss_feed.link, rss_feed.web_link, rss_feed.title, _datetime_to_text(rss_feed.last_update),
+                rss_feed.last_error)
         cursor = self._execute_sql(sql, data)
         rss_feed.id = cursor.lastrowid
 
     def update_rss_feed(self, rss_feed: RssFeed):
         sql = """
             UPDATE rss_feeds 
-            SET link=?, title=?, last_update=?, last_error=?
+            SET link=?, web_link=?, title=?, last_update=?, last_error=?
             WHERE id=?
         """
-        data = (rss_feed.link, rss_feed.title, _datetime_to_text(rss_feed.last_update), rss_feed.last_error,
-                rss_feed.id)
+        data = (
+        rss_feed.link, rss_feed.web_link, rss_feed.title, _datetime_to_text(rss_feed.last_update), rss_feed.last_error,
+        rss_feed.id)
         self._execute_sql(sql, data)
 
-    def get_all_rss_feeds(self):
-        self.cursor.execute("SELECT id, link, title, last_update, last_error FROM rss_feeds")
+    def get_all_rss_feeds(self) -> list[RssFeed]:
+        return self._get_rss_feeds("1=1")
+
+    def get_rss_feed_by_id(self, rss_feed_id: int) -> RssFeed | None:
+        rss_feeds = self._get_rss_feeds(f"id={rss_feed_id}")
+        if len(rss_feeds) < 1:
+            return None
+        return rss_feeds[0]
+
+    def _get_rss_feeds(self, where: str) -> list[RssFeed]:
+        self.cursor.execute(f"SELECT id, link, web_link, title, last_update, last_error FROM rss_feeds WHERE {where}")
         rows = self.cursor.fetchall()
         rss_feeds = []
         for row in rows:
-            rss_feed = RssFeed(rss_feed_id=row[0], link=row[1], title=row[2], last_update=_text_to_datetime(row[3]),
-                               last_error=row[4])
+            rss_feed = RssFeed(rss_feed_id=row[0], link=row[1], web_link=row[2], title=row[3],
+                               last_update=_text_to_datetime(row[4]), last_error=row[5])
             rss_feeds.append(rss_feed)
         return rss_feeds
 

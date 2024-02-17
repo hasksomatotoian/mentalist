@@ -1,6 +1,6 @@
 import logging
 
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect, url_for
 from services.config_service import ConfigService
 from services.database_service import DatabaseService
 
@@ -17,29 +17,18 @@ def index():
     return render_template('index.html', topics=topics)
 
 
-@app.route('/post_read/<post_id>')
-def post_read(post_id: int):
-    db_service = DatabaseService(cfg_service)
-    post = db_service.get_post_by_id(post_id)
-    if post is not None:
-        post.read = not post.read
-        db_service.update_post(post)
-        db_service.update_topics_rating_and_published()
-
-    return index()
-
-
 @app.route('/topic_read/<topic_id>')
 def topic_read(topic_id: int):
     db_service = DatabaseService(cfg_service)
-    posts = db_service.get_posts_by_topic_id(topic_id)
-    for post in posts:
-        if not post.read:
-            post.read = True
-            db_service.update_post(post)
-    db_service.update_topics_rating_and_published()
+    db_service.toggle_topic_read(topic_id)
+    return redirect(url_for('index'))
 
-    return index()
+
+@app.route('/topic_save/<topic_id>')
+def topic_save(topic_id: int):
+    db_service = DatabaseService(cfg_service)
+    db_service.toggle_topic_saved(topic_id)
+    return redirect(url_for('index'))
 
 
 if __name__ == '__main__':
