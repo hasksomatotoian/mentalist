@@ -8,17 +8,19 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
-<!--
     <header>
       <nav>
         <ul>
-          <li>Menu item</li>
-          <li>Menu item</li>
-          <li>Menu item</li>
+            {% for area in areas %}
+            <li>
+                <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('display_list', area_id=area.id) }}">
+                    {{ area.title }} ({{ area.number_of_unread_topics }})
+                </a>
+            </li>
+            {% endfor %}
         </ul>
       </nav>
     </header>
- -->
     <main class="d-flex flex-nowrap">
         <div class="d-flex flex-column align-items-stretch flex-shrink-0 bg-body-tertiary" style="width: 100%">
             <h1>F1 News</h1>
@@ -34,11 +36,11 @@
                                 <i class="bi bi-newspaper"></i>
                             </a>
                             &nbsp;
-                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_save', topic_id=topic.id) }}">
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_save', area_id=topic.area_id, topic_id=topic.id) }}">
                                 <i class="bi {{ 'bi-bookmark-plus-fill' if topic.saved else 'bi-bookmark-plus' }}"></i>
                             </a>
                             &nbsp;
-                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', topic_id=topic.id) }}">
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id) }}">
                                 <i class="bi bi-check-lg"></i>
                             </a>
                         </div>
@@ -54,14 +56,14 @@
                     </a>
                     <div class="ps-3 pt-3 col-11 small collapse" id="topic-links-{{ topic.id }}">
                         {% for post in topic.posts %}
-                        <a href="{{ post.link }}" target="_blank" class="link-body-emphasis d-inline-flex text-decoration-none rounded">
-                        <div class="pt-2 pb-2 small border-top">
-                            <div>
+                        <a href="{{ post.link }}" target="_blank" class="link-body-emphasis text-decoration-none">
+                        <div class="pt-2 pb-2 small border-top" style="width: 100%">
+                            <div class="col-11">
                                 <img src="{{ post.rss_feed.web_link }}/favicon.ico" height="12px" />&nbsp;
                                 <strong><span class="text-body-secondary">{{ post.rss_feed.title }} |</span></strong>
                                 <strong>{{ post.title }}</strong>
                             </div>
-                            <div class="w-100 ps-3 pt-1 text-body-secondary">
+                            <div class="ps-3 pt-1 text-body-secondary">
                                 {{ post.summary }}
                             </div>
                         </div>

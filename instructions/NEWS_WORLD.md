@@ -19,7 +19,9 @@ Here are my interests, grouped by categories, from most interesting (Group 1) to
 
 - You will receive JSON document containing a list of the latest posts. Each post entry contains the ID, TITLE, and SUMMARY of the posts.
 
-- Group together posts that discuss the same topic. This includes creating topics for individual posts.
+- Group together posts that discuss the same topic.
+
+- Create a topic for every post, even if it means creating a topic for just one post.
 
 - Avoid creating overly broad topics such as "Generic news"; aim to match the main topic of the post as closely as possible.
 

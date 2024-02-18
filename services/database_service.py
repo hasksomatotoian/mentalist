@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlite3 import Cursor
 
 from model.area import Area
+from model.area_web import AreaWeb
 from model.post import Post
 from model.topic import Topic
 from model.rss_feed import RssFeed
@@ -206,6 +207,18 @@ class DatabaseService:
     def get_enabled_areas(self) -> list[Area]:
         return self._get_areas(f"enabled = {_bool_to_int(True)}", "priority, id")
 
+    def get_areas_for_web(self) -> list[AreaWeb]:
+        areas_for_web = [AreaWeb(area_id=0, title="All",
+                                 number_of_unread_topics=0)]
+        areas = self.get_enabled_areas()
+        for area in areas:
+            number_of_unread_topics = self.get_number_of_unread_topics(area.id)
+            areas_for_web.append(AreaWeb(area_id=area.id, title=area.title,
+                                         number_of_unread_topics=number_of_unread_topics))
+            areas_for_web[0].number_of_unread_topics += number_of_unread_topics
+
+        return areas_for_web
+
     def _get_areas(self, where: str, order_by: str = "priority, id") -> list[Area]:
         sql = f"""
             SELECT
@@ -220,7 +233,7 @@ class DatabaseService:
 
         areas = []
         for row in rows:
-            areas.append(Area(assistant_id=row[0], name=row[1], title=row[2], instructions_filename=row[3],
+            areas.append(Area(area_id=row[0], name=row[1], title=row[2], instructions_filename=row[3],
                               model=row[4], needs_code_interpreter=_int_to_bool(row[5]),
                               needs_retrieval=_int_to_bool(row[6]), ai_id=row[7],
                               ai_created=_text_to_datetime(row[8]), ai_last_update=_text_to_datetime(row[9]),
@@ -328,8 +341,9 @@ class DatabaseService:
             return topics[0]
         return None
 
-    def get_topics_for_view(self) -> list[Topic]:
-        topics = self._get_topics("read = 0", "ai_rating, created DESC")
+    def get_topics_for_view(self, area_id: int) -> list[Topic]:
+        topics = self._get_topics(where=f"read = {_bool_to_int(False)} AND {area_id} IN (area_id, 0)",
+                                  order_by="ai_rating, created DESC")
         for topic in topics:
             topic.posts = self._get_posts(f"""
                 posts.id IN (
@@ -349,6 +363,13 @@ class DatabaseService:
     def toggle_topic_read(self, topic_id):
         sql = f"UPDATE topics SET read = (1 - read) WHERE id = {topic_id}"
         self._execute_sql(sql)
+
+    def get_number_of_unread_topics(self, area_id: int) -> int:
+        sql = f"""
+            SELECT COUNT(*) FROM topics WHERE area_id = {area_id} AND read = {_bool_to_int(False)}
+        """
+        self.cursor.execute(sql)
+        return self.cursor.fetchone()[0]
 
     def _get_topics(self, where: str, order_by) -> list[Topic]:
         sql = f"""
