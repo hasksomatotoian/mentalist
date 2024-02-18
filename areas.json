@@ -8,6 +8,12 @@
       "rss_feeds": [
         "https://www.formula1.com/content/fom-website/en/latest/all.xml",
         "http://www1.skysports.com/feeds/12433/news.xml"
+      ],
+      "--rss_feeds": [
+        "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+        "http://www.f1reader.com/rss/f1r",
+        "http://formulaspy.com/feed",
+        "https://www.f1-fansite.com/feed/"
       ]
     }
   ]

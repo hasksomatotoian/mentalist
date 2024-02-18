@@ -8,6 +8,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from model.area import Area
 from model.topic import Topic
 from services.config_service import ConfigService
 from services.database_service import DatabaseService
@@ -22,76 +23,76 @@ class OpenAiService:
         )
 
     def create_topics(self):
-        user_messages = self._get_posts_without_topic_json()
-        if user_messages is None:
+        areas = self.database_service.get_enabled_areas()
+        if areas is None:
             return
 
-        # print(user_message)
+        for area in areas:
+            logging.info(f"Creating topics for area \"{area}\"")
+            user_messages = self._get_posts_by_area_without_topic_json(area.id)
+            if user_messages is None:
+                return
 
-        # TODO: Read assistant name from Post
-        ai_assistant_id = self._get_assistant_id("F1 - News")
+            # print(user_message)
 
-        for user_message in user_messages:
-            responses = self._get_responses_from_json(ai_assistant_id, user_message)
-            if responses is None:
-                continue
+            self._create_or_update_ai_assistant(area)
 
-            for response in responses:
-                try:
-                    topic = Topic(title=response["TOPIC_TITLE"], summary=response["TOPIC_SUMMARY"],
-                                  ai_analysis=response["TOPIC_ANALYSIS"], ai_rating=int(response["TOPIC_RATING"]))
-                    self.database_service.add_topic(topic)
-                    logging.info(f"Topic \"{topic}\" created successfully")
+            for user_message in user_messages:
+                responses = self._get_responses_from_json(area.ai_id, user_message)
+                if responses is None:
+                    continue
 
-                    post_ids = response["POST_IDs"].split(',')
-                    for post_id_as_str in post_ids:
-                        post_id = int(post_id_as_str)
-                        self.database_service.add_post_x_topic(post_id, topic.id)
-                        self.database_service.add_post_x_topic(post_id, topic.id)
+                for response in responses:
+                    try:
+                        topic = Topic(area_id=area.id, title=response["TOPIC_TITLE"], summary=response["TOPIC_SUMMARY"],
+                                      ai_analysis=response["TOPIC_ANALYSIS"], ai_rating=int(response["TOPIC_RATING"]))
+                        self.database_service.add_topic(topic)
+                        logging.info(f"Topic \"{topic}\" created successfully")
 
-                except Exception as e:
-                    logging.error(f"Error when assigning topic to response \"{response}\": {e}")
+                        post_ids = response["POST_IDs"].split(',')
+                        for post_id_as_str in post_ids:
+                            post_id = int(post_id_as_str)
+                            self.database_service.add_post_x_topic(post_id, topic.id)
+                            self.database_service.add_post_x_topic(post_id, topic.id)
 
-        self.database_service.update_topics_rating_and_published()
+                    except Exception as e:
+                        logging.error(f"Error when assigning topic to response \"{response}\": {e}")
 
-    def _get_assistant_id(self, assistant_name: str) -> str:
+    def _create_or_update_ai_assistant(self, area: Area):
 
-        assistant = self.database_service.get_area_by_name(assistant_name)
-        with open(assistant.instructions_filename, 'r') as instructions_file:
+        with open(area.instructions_filename, 'r') as instructions_file:
             # Read the entire file content into a string
             instructions = instructions_file.read()
 
-        current_checksum = hashlib.sha1((assistant.model + instructions).encode('utf-8')).hexdigest()
+        current_checksum = hashlib.sha1((area.model + instructions).encode('utf-8')).hexdigest()
 
-        if assistant.ai_id is None:
+        if area.ai_id is None:
             ai_assistant = self.client.beta.assistants.create(
-                name=assistant.name,
-                description=assistant.title,
+                name=area.name,
+                description=area.title,
                 instructions=instructions,
-                model=assistant.model
+                model=area.model
                 # TODO: Handle tools
                 # tools=[{ "type": "retrieval" if assistant.needs_retrieval else "code_interpreter" if assistant.needs_code_interpreter else ""}]
             )
 
-            assistant.ai_created = datetime.now().astimezone(timezone.utc)
-            assistant.ai_last_update = assistant.ai_created
-            assistant.ai_id = ai_assistant.id
-            assistant.checksum = current_checksum
-            self.database_service.update_area(assistant)
+            area.ai_created = datetime.now().astimezone(timezone.utc)
+            area.ai_last_update = area.ai_created
+            area.ai_id = ai_assistant.id
+            area.checksum = current_checksum
+            self.database_service.update_area(area)
 
-        elif assistant.checksum != current_checksum:
+        elif area.checksum != current_checksum:
             ai_assistant = self.client.beta.assistants.update(
-                assistant_id=assistant.ai_id,
+                assistant_id=area.ai_id,
                 instructions=instructions,
-                model=assistant.model
+                model=area.model
             )
 
-            assistant.ai_id = ai_assistant.id
-            assistant.ai_last_update = assistant.ai_created
-            assistant.checksum = current_checksum
-            self.database_service.update_area(assistant)
-
-        return assistant.ai_id
+            area.ai_id = ai_assistant.id
+            area.ai_last_update = datetime.now().astimezone(timezone.utc)
+            area.checksum = current_checksum
+            self.database_service.update_area(area)
 
     def _get_responses_from_json(self, ai_assistant_id: str, user_message: str) -> Any | None:
         ai_thread = self.client.beta.threads.create()
@@ -132,11 +133,11 @@ class OpenAiService:
 
         return None
 
-    def _get_posts_without_topic_json(self) -> list[str] | None:
+    def _get_posts_by_area_without_topic_json(self, area_id: int) -> list[str] | None:
         messages = []
 
         logging.debug("Getting list of posts to assign a topic")
-        posts = self.database_service.get_posts_without_topic()
+        posts = self.database_service.get_posts_by_area_without_topic(area_id)
         logging.info(f"Found {len(posts)} posts without a topic")
 
         if len(posts) < 1:

@@ -28,7 +28,7 @@ class RssFeedService:
 
     def add_latest_posts(self):
         logging.debug("Getting list of RSS feeds")
-        rss_feeds = self.database_service.get_all_rss_feeds()
+        rss_feeds = self.database_service.get_enabled_rss_feeds()
         logging.info(f"Found {len(rss_feeds)} RSS feeds")
         for rss_feed in rss_feeds:
             try:
@@ -39,7 +39,7 @@ class RssFeedService:
                 rss_feed.title = feed.feed.title
                 rss_feed.web_link = feed.feed.link
 
-                logging.info(f"Processing new posts from \"{rss_feed}\"")
+                logging.info(f"Processing {len(feed.entries)} post(s) from \"{rss_feed}\"")
 
                 # Iterate through entries and print their titles and links
                 for entry in feed.entries:

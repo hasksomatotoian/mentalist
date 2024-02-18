@@ -23,3 +23,6 @@ class Area:
         self.priority = priority
         self.enabled = enabled
         self.rss_feeds = []
+
+    def __str__(self):
+        return f"[{self.id}] {self.title})"

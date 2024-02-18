@@ -115,10 +115,10 @@ class DatabaseService:
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS topics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                area_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 summary TEXT NOT NULL,
-                latest_post_published TEXT,
-                best_post_ai_rating INTEGER,
+                created TEXT,
                 my_rating INTEGER,
                 ai_rating INTEGER,
                 ai_analysis TEXT,
@@ -188,7 +188,6 @@ class DatabaseService:
                 self.add_or_update_areas_x_rss_feeds(area_id=area_id, rss_feed_id=rss_feed_id,
                                                      priority=rss_feed_priority)
 
-
     # region Area
 
     def add_area(self, area: Area):
@@ -206,25 +205,34 @@ class DatabaseService:
         area.id = cursor.lastrowid
 
     def get_area_by_name(self, name: str) -> Area | None:
-        sql = """
+        areas = self._get_areas(f"name = '{name}'")
+        if len(areas) > 0:
+            return areas[0]
+        return None
+
+    def get_enabled_areas(self) -> list[Area]:
+        return self._get_areas(f"enabled = {_bool_to_int(True)}", "priority, id")
+
+    def _get_areas(self, where: str, order_by: str = "priority, id") -> list[Area]:
+        sql = f"""
             SELECT
                 id, name, title, instructions_filename, model, needs_code_interpreter, needs_retrieval, 
                 ai_id, ai_created, ai_last_update, checksum, priority, enabled
             FROM areas
-            WHERE
-                name=
-        """ + f"\"{name}\""
+            WHERE {where}
+            ORDER BY {order_by}
+        """
         self.cursor.execute(sql)
         rows = self.cursor.fetchall()
-        if len(rows) > 0:
-            row = rows[0]
-            assistant = Area(assistant_id=row[0], name=row[1], title=row[2], instructions_filename=row[3],
-                             model=row[4], needs_code_interpreter=_int_to_bool(row[5]),
-                             needs_retrieval=_int_to_bool(row[6]), ai_id=row[7],
-                             ai_created=_text_to_datetime(row[8]), ai_last_update=_text_to_datetime(row[9]),
-                             checksum=row[10], priority=row[11], enabled=_int_to_bool(row[12]))
-            return assistant
-        return None
+
+        areas = []
+        for row in rows:
+            areas.append(Area(assistant_id=row[0], name=row[1], title=row[2], instructions_filename=row[3],
+                              model=row[4], needs_code_interpreter=_int_to_bool(row[5]),
+                              needs_retrieval=_int_to_bool(row[6]), ai_id=row[7],
+                              ai_created=_text_to_datetime(row[8]), ai_last_update=_text_to_datetime(row[9]),
+                              checksum=row[10], priority=row[11], enabled=_int_to_bool(row[12])))
+        return areas
 
     def update_area(self, area: Area):
         sql = """
@@ -282,9 +290,22 @@ class DatabaseService:
             return posts[0]
         return None
 
-    def get_posts_without_topic(self) -> list[Post]:
-        return self._get_posts("""
-            (SELECT COUNT(*) FROM posts_x_topics WHERE posts_x_topics.post_id = posts.id) = 0
+    def get_posts_by_area_without_topic(self, area_id: int) -> list[Post]:
+        return self._get_posts(f"""
+            posts.rss_feed_id IN (
+                SELECT areas_x_rss_feeds.rss_feed_id 
+                FROM areas_x_rss_feeds
+                WHERE areas_x_rss_feeds.area_id = {area_id}
+            ) 
+            AND
+            (
+                SELECT COUNT(*) 
+                FROM posts_x_topics 
+                JOIN topics ON topics.id = posts_x_topics.topic_id
+                WHERE 
+                    posts_x_topics.post_id = posts.id
+                    AND topics.area_id = {area_id}
+            ) = 0
         """)
 
     def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
@@ -314,12 +335,11 @@ class DatabaseService:
     def add_topic(self, topic: Topic):
         sql = """
             INSERT INTO topics
-                (title, summary, latest_post_published, best_post_ai_rating, my_rating, ai_rating, ai_analysis, read,
-                 saved)
+                (area_id, title, summary, created, my_rating, ai_rating, ai_analysis, read, saved)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        data = (topic.title, topic.summary, _datetime_to_text(topic.latest_post_published),
-                topic.best_post_ai_rating, topic.my_rating, topic.ai_rating, topic.ai_analysis,
+        data = (topic.area_id, topic.title, topic.summary, _datetime_to_text(topic.created),
+                topic.my_rating, topic.ai_rating, topic.ai_analysis,
                 _bool_to_int(topic.read), _bool_to_int(topic.saved))
         cursor = self._execute_sql(sql, data)
         topic.id = cursor.lastrowid
@@ -331,7 +351,7 @@ class DatabaseService:
         return None
 
     def get_topics_for_view(self) -> list[Topic]:
-        topics = self._get_topics("read = 0", "ai_rating, latest_post_published DESC")
+        topics = self._get_topics("read = 0", "ai_rating, created DESC")
         for topic in topics:
             topic.posts = self._get_posts(f"""
                 posts.id IN (
@@ -344,29 +364,6 @@ class DatabaseService:
                 post.rss_feed = self.get_rss_feed_by_id(post.rss_feed_id)
         return topics
 
-    def update_topics_rating_and_published(self):
-        sql = """
-            UPDATE topics
-            SET
-                best_post_ai_rating = (
-                    SELECT MIN(posts.ai_rating) 
-                    FROM posts
-                    JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
-                    WHERE 
-                        posts_x_topics.topic_id = topics.id
-                        AND posts.ai_rating > 0
-                        AND posts.read = 0
-                ),
-                latest_post_published = (
-                    SELECT MAX(posts.published) 
-                    FROM posts
-                    JOIN posts_x_topics ON posts_x_topics.post_id = posts.id 
-                    WHERE 
-                        posts_x_topics.topic_id = topics.id
-                )
-        """
-        self._execute_sql(sql)
-
     def toggle_topic_saved(self, topic_id):
         sql = f"UPDATE topics SET saved = (1 - saved) WHERE id = {topic_id}"
         self._execute_sql(sql)
@@ -378,8 +375,7 @@ class DatabaseService:
     def _get_topics(self, where: str, order_by) -> list[Topic]:
         sql = f"""
             SELECT
-                id, title, summary, latest_post_published, best_post_ai_rating, my_rating, ai_rating, ai_analysis, read,
-                saved
+                id, area_id, title, summary, created, my_rating, ai_rating, ai_analysis, read, saved
             FROM topics
             WHERE {where}
             ORDER BY {order_by}
@@ -388,9 +384,8 @@ class DatabaseService:
         rows = self.cursor.fetchall()
         topics = []
         for row in rows:
-            topic = Topic(topic_id=row[0], title=row[1], summary=row[2],
-                          latest_post_published=_text_to_datetime(row[3]),
-                          best_post_ai_rating=row[4], my_rating=row[5], ai_rating=row[6], ai_analysis=row[7],
+            topic = Topic(topic_id=row[0], area_id=row[1], title=row[2], summary=row[3],
+                          created=_text_to_datetime(row[4]), my_rating=row[5], ai_rating=row[6], ai_analysis=row[7],
                           read=_int_to_bool(row[8]), saved=_int_to_bool(row[9]))
             topics.append(topic)
         return topics
@@ -434,8 +429,14 @@ class DatabaseService:
             rss_feed.id)
         self._execute_sql(sql, data)
 
-    def get_all_rss_feeds(self) -> list[RssFeed]:
-        return self._get_rss_feeds("1=1")
+    def get_enabled_rss_feeds(self) -> list[RssFeed]:
+        return self._get_rss_feeds(f"""
+            rss_feeds.id IN (
+                SELECT areas_x_rss_feeds.rss_feed_id 
+                FROM areas_x_rss_feeds
+                WHERE areas_x_rss_feeds.enabled = {_bool_to_int(True)}
+            )
+        """)
 
     def get_rss_feed_by_id(self, rss_feed_id: int) -> RssFeed | None:
         rss_feeds = self._get_rss_feeds(f"id={rss_feed_id}")

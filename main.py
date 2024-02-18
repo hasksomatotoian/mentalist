@@ -8,12 +8,10 @@ from services.openai_service import OpenAiService
 from services.rss_feed_service import RssFeedService
 import logging
 
-if __name__ == '__main__':
-    cfg_service = ConfigService()
-    logging.basicConfig(level=cfg_service.logging_level, format=cfg_service.logging_format)
 
+def load_areas_json() -> list[Area]:
+    areas = []
     with open(cfg_service.areas_filename, 'r') as areas_file:
-        areas = []
         areas_json = json.load(areas_file)
         area_priority = 0
         for area_json in areas_json["areas"]:
@@ -26,15 +24,15 @@ if __name__ == '__main__':
             for rss_feed_json in area_json["rss_feeds"]:
                 area.rss_feeds.append(RssFeed(link=rss_feed_json))
             areas.append(area)
+    return areas
 
-        # self.add_rss_feed(RssFeed(link="http://www.f1reader.com/rss/f1r"))
-        # self.add_rss_feed(RssFeed(link="http://formulaspy.com/feed"))
-        # self.add_rss_feed(RssFeed(link="https://www.f1-fansite.com/feed/"))
+
+if __name__ == '__main__':
+    cfg_service = ConfigService()
+    logging.basicConfig(level=cfg_service.logging_level, format=cfg_service.logging_format)
 
     db_service = DatabaseService(cfg_service)
-    db_service.import_areas(areas)
-
-    exit(0)
+    db_service.import_areas(load_areas_json())
 
     rss_feed_service = RssFeedService(db_service)
     rss_feed_service.add_latest_posts()
