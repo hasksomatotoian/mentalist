@@ -29,18 +29,19 @@ class OpenAiService:
 
         for area in areas:
             logging.info(f"Creating topics for area \"{area}\"")
-            user_messages = self._get_posts_by_area_without_topic_json(area.id)
-            if user_messages is None:
-                return
 
-            # print(user_message)
+            while True:
+                user_message = self._get_posts_by_area_without_topic_json(area.id)
+                if user_message is None:
+                    break
 
-            self._create_or_update_ai_assistant(area)
+                logging.info(f"User message:\n{user_message}")
 
-            for user_message in user_messages:
+                self._create_or_update_ai_assistant(area)
+
                 responses = self._get_responses_from_json(area.ai_id, user_message)
                 if responses is None:
-                    continue
+                    break
 
                 for response in responses:
                     try:
@@ -134,9 +135,7 @@ class OpenAiService:
 
         return None
 
-    def _get_posts_by_area_without_topic_json(self, area_id: int) -> list[str] | None:
-        messages = []
-
+    def _get_posts_by_area_without_topic_json(self, area_id: int) -> str | None:
         logging.debug("Getting list of posts to assign a topic")
         posts = self.database_service.get_posts_by_area_without_topic(area_id)
         logging.info(f"Found {len(posts)} posts without a topic")
@@ -145,10 +144,8 @@ class OpenAiService:
             return None
 
         batch_index = 0
-        formatted_posts = ""
+        formatted_posts = "{[\n"
         for post in posts:
-            if batch_index == 0:
-                formatted_posts = "{[\n"
             formatted_posts += "\t{"
             formatted_posts += f"\"ID\": \"{post.id}\", "
             formatted_posts += f"\"TITLE\": \"{html.escape(post.title)}\","
@@ -156,12 +153,7 @@ class OpenAiService:
             formatted_posts += "},\n"
             batch_index += 1
             if batch_index >= self.config_service.openai_posts_batch_size:
-                formatted_posts += "]}"
-                messages.append(formatted_posts)
-                batch_index = 0
+                break
 
-        if batch_index > 0:
-            formatted_posts += "]}"
-            messages.append(formatted_posts)
-
-        return messages
+        formatted_posts += "]}"
+        return formatted_posts

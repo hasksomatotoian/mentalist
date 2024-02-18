@@ -6,14 +6,34 @@
       "instructions_filename": "./instructions/F1_NEW_TOPICS.md",
       "model": "gpt-4-turbo-preview",
       "rss_feeds": [
-        "https://www.formula1.com/content/fom-website/en/latest/all.xml"
-      ],
-      "--rss_feeds": [
-        "http://www1.skysports.com/feeds/12433/news.xml",
         "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+        "http://www1.skysports.com/feeds/12433/news.xml",
         "http://www.f1reader.com/rss/f1r",
         "http://formulaspy.com/feed",
         "https://www.f1-fansite.com/feed/"
+      ],
+      "--rss_feeds": [
+        "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+        "http://www1.skysports.com/feeds/12433/news.xml",
+        "http://www.f1reader.com/rss/f1r",
+        "http://formulaspy.com/feed",
+        "https://www.f1-fansite.com/feed/"
+      ]
+    },
+    {
+      "name": "News-World",
+      "title": "News - World",
+      "instructions_filename": "./instructions/NEWS_WORLD.md",
+      "model": "gpt-4-turbo-preview",
+      "rss_feeds": [
+        "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "http://www.ct24.cz/rss/hlavni-zpravy/"
+      ],
+      "--rss_feeds": [
+        "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "http://www.ct24.cz/rss/hlavni-zpravy/",
+        "https://www.semafor.com/rss.xml",
+        "https://www.politico.eu/feed/"
       ]
     }
   ]
