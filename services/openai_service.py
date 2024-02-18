@@ -45,7 +45,8 @@ class OpenAiService:
                 for response in responses:
                     try:
                         topic = Topic(area_id=area.id, title=response["TOPIC_TITLE"], summary=response["TOPIC_SUMMARY"],
-                                      ai_analysis=response["TOPIC_ANALYSIS"], ai_rating=int(response["TOPIC_RATING"]))
+                                      ai_analysis=response["TOPIC_ANALYSIS"], ai_rating=int(response["TOPIC_RATING"]),
+                                      created=datetime.now().astimezone(timezone.utc))
                         self.database_service.add_topic(topic)
                         logging.info(f"Topic \"{topic}\" created successfully")
 

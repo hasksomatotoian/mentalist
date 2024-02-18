@@ -3,7 +3,7 @@ from datetime import datetime
 
 class Topic:
     def __init__(self, area_id: int, title: str, summary: str, ai_rating: int, ai_analysis: str,
-                 created: datetime = None, topic_id: int = None, my_rating: int = 0,
+                 created: datetime, topic_id: int = None, my_rating: int = 0,
                  read: bool = False, saved: bool = False):
         self.id = topic_id
         self.area_id = area_id

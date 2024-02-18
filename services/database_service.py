@@ -6,7 +6,6 @@ from sqlite3 import Cursor
 from model.area import Area
 from model.post import Post
 from model.topic import Topic
-from model.post_status import PostStatus
 from model.rss_feed import RssFeed
 from services.config_service import ConfigService
 
@@ -102,13 +101,7 @@ class DatabaseService:
                 published TEXT NOT NULL,
                 created TEXT NOT NULL,
                 rss_feed_id INTEGER,
-                status INTEGER NOT NULL,
-                filename TEXT,
-                last_error TEXT,
                 ai_fileid TEXT,
-                ai_rating INTEGER NOT NULL,
-                ai_summary TEXT,
-                read INTEGER,
                 saved INTEGER
             );
         """)
@@ -258,15 +251,12 @@ class DatabaseService:
     def add_post(self, post: Post):
         sql = """
             INSERT OR IGNORE INTO posts
-                (link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rating, ai_summary, read, saved)
+                (link, title, summary, published, created, rss_feed_id, ai_fileid, saved)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                (?, ?, ?, ?, ?, ?, ?, ?) 
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rating, post.ai_summary,
-                _bool_to_int(post.read), _bool_to_int(post.saved))
+                _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved))
         cursor = self._execute_sql(sql, data)
         post.id = cursor.lastrowid
 
@@ -274,21 +264,12 @@ class DatabaseService:
         sql = """
             UPDATE posts
             SET
-                link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, status=?, filename=?, last_error=?,
-                ai_fileid=?, ai_rating=?, ai_summary=?, read=?, saved=?
+                link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, ai_fileid=?, saved=?
             WHERE id = ?
         """
         data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.status.value, post.filename,
-                post.last_error, post.ai_fileid, post.ai_rating, post.ai_summary, _bool_to_int(post.read),
-                _bool_to_int(post.saved), post.id)
+                _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved), post.id)
         self._execute_sql(sql, data)
-
-    def get_post_by_id(self, post_id: int) -> Post | None:
-        posts = self._get_posts(f"id = {post_id}")
-        if len(posts) > 0:
-            return posts[0]
-        return None
 
     def get_posts_by_area_without_topic(self, area_id: int) -> list[Post]:
         return self._get_posts(f"""
@@ -311,8 +292,7 @@ class DatabaseService:
     def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
         self.cursor.execute(f"""
             SELECT 
-                id, link, title, summary, published, created, rss_feed_id, status, filename, last_error, 
-                ai_fileid, ai_rating, ai_summary, read, saved
+                id, link, title, summary, published, created, rss_feed_id, ai_fileid, saved
             FROM posts
             WHERE {where}
             ORDER BY {order_by}
@@ -322,9 +302,7 @@ class DatabaseService:
         for row in rows:
             post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
                         published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
-                        rss_feed_id=row[6], status=PostStatus(row[7]), filename=row[8], last_error=row[9],
-                        ai_fileid=row[10], ai_rating=row[11], ai_summary=row[12], read=_int_to_bool(row[13]),
-                        saved=_int_to_bool(row[14]))
+                        rss_feed_id=row[6], ai_fileid=row[7], saved=_int_to_bool(row[8]))
             posts.append(post)
         return posts
 
