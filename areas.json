@@ -8,16 +8,17 @@
       "rss_feeds": [
         "https://www.formula1.com/content/fom-website/en/latest/all.xml",
         "http://www1.skysports.com/feeds/12433/news.xml",
-        "http://www.f1reader.com/rss/f1r",
         "http://formulaspy.com/feed",
-        "https://www.f1-fansite.com/feed/"
+        "https://www.f1-fansite.com/feed/",
+        "https://www.gpfans.com/en/rss.xml",
+        "https://www.pitpass.com/fes_php/fes_usr_sit_newsfeed.php?fes_prepend_aty_sht_name=1",
+        "https://www.crash.net/rss/f1",
+        "https://www.crash.net/rss/f2",
+        "https://www.crash.net/rss/f3",
+        "https://www.motorsportweek.com/series/single-seater/formula-1/feed/"
       ],
       "--rss_feeds": [
-        "https://www.formula1.com/content/fom-website/en/latest/all.xml",
-        "http://www1.skysports.com/feeds/12433/news.xml",
-        "http://www.f1reader.com/rss/f1r",
-        "http://formulaspy.com/feed",
-        "https://www.f1-fansite.com/feed/"
+        "http://www.f1reader.com/rss/f1r"
       ]
     },
     {
