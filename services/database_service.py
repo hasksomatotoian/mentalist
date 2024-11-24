@@ -1,10 +1,13 @@
 import os
 import sqlite3
+import uuid
 
 from datetime import datetime
 from sqlite3 import Cursor
 
 from chromadb.api.types import IncludeEnum
+from openai.types import Embedding
+from pyasn1.type.univ import Sequence
 
 from model.area import Area
 from model.area_web import AreaWeb
@@ -44,6 +47,33 @@ def _int_to_bool(int_value: int) -> bool | None:
         return None
     else:
         return int_value != 0
+
+
+def _post_to_metadata(post: Post) -> Mapping[str, Union[str, int, float, bool]]:
+    return {
+                "link": post.link,
+                "title": post.title,
+                "published": _datetime_to_text(post.published),
+                "created": _datetime_to_text(post.created),
+                "rss_feed_id": post.rss_feed_id,
+                "read": post.read,
+                "saved": post.saved
+            }
+
+def _metadata_to_post(post_id: uuid, summary: str, embeddings: List[float],
+                      metadata: Mapping[str, Union[str, int, float, bool]]) -> Post:
+    post = Post(metadata["link"],
+                metadata["title"],
+                summary,
+                _text_to_datetime(metadata["published"]),
+                metadata["rss_feed_id"],
+                post_id,
+                _text_to_datetime(metadata["created"]),
+                metadata["read"],
+                metadata["saved"],
+                embeddings)
+    post.embeddings = embeddings
+    return post
 
 
 # endregion
@@ -103,19 +133,6 @@ class DatabaseService:
             );
         """)
 
-        self._execute_sql("""
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                link TEXT NOT NULL UNIQUE,
-                title TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                published TEXT NOT NULL,
-                created TEXT NOT NULL,
-                rss_feed_id INTEGER,
-                ai_fileid TEXT,
-                saved INTEGER
-            );
-        """)
         self._execute_sql("""
             CREATE TABLE IF NOT EXISTS topics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,27 +292,39 @@ class DatabaseService:
         documents = []
         ids = []
         metadata: List[Mapping[str, Union[str, int, float, bool]]] = []
+        embeddings: list[List[float]] = []
+
         for post in posts:
-            ids.append(post.link)
+            ids.append(str(post.id))
             documents.append(post.summary)
-            metadata.append({
-                "title": post.title,
-                "published": _datetime_to_text(post.published)})
+            metadata.append(_post_to_metadata(post))
+
+            embeddings.append(post.embeddings)
 
         self.vector_db_collection.add(
             ids=ids,
+            embeddings=embeddings,
             documents=documents,
             metadatas=metadata
         )
 
         return
 
-    def get_posts(self):
-        include = [IncludeEnum.metadatas]
+    def get_posts(self) -> list[Post]:
+        posts: list[Post] = []
+
+        include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings]
         db_posts = self.vector_db_collection.get(include=include)
+        ids = db_posts["ids"]
+        documents = db_posts["documents"]
         metadatas = db_posts["metadatas"]
-        for db_post in metadatas:
-            print(db_post)
+        embeddings = db_posts["embeddings"]
+        for index in range(len(ids)):
+            post = _metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index])
+            print(post)
+            posts.append(post)
+
+        return posts
 
     def update_post(self, post: Post):
         return

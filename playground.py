@@ -13,9 +13,10 @@ logging.basicConfig(level=cfg_service.logging_level, format=cfg_service.logging_
 db_service = DatabaseService(cfg_service)
 
 posts: list[Post] = [
-    Post("http://" + str(uuid.uuid4()), "Title", "", datetime.now().astimezone(timezone.utc), 1)
+    Post("http://" + str(uuid.uuid4()), "Title", "", datetime.now().astimezone(timezone.utc), 1,
+         embeddings=[1,2,3])
 ]
-# db_service.add_posts(posts)
+db_service.add_posts(posts)
 
 db_service.get_posts()
 
