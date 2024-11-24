@@ -161,3 +161,5 @@ cython_debug/
 
 post_files/
 
+/chroma_db/
+/mentalist.sqlite3

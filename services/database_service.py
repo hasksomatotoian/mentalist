@@ -1,7 +1,10 @@
+import os
 import sqlite3
 
 from datetime import datetime
 from sqlite3 import Cursor
+
+from chromadb.api.types import IncludeEnum
 
 from model.area import Area
 from model.area_web import AreaWeb
@@ -9,6 +12,8 @@ from model.post import Post
 from model.topic import Topic
 from model.rss_feed import RssFeed
 from services.config_service import ConfigService
+import chromadb
+from typing import Mapping, Union, List
 
 
 # region Helper Methods
@@ -48,9 +53,14 @@ class DatabaseService:
     # region _Private Methods
 
     def __init__(self, config_service: ConfigService):
+        if not os.path.exists(config_service.vector_db_path):
+            os.makedirs(config_service.vector_db_path)
+        self.vector_db = chromadb.PersistentClient(path=config_service.vector_db_path)
+        self.vector_db_collection = self.vector_db.get_or_create_collection(config_service.vector_db_collection)
+
         self.connection = sqlite3.connect(config_service.database_filename)
-        self.cursor = self.connection.cursor()
-        self._create_db()
+        # self.cursor = self.connection.cursor()
+        # self._create_db()
 
     def __del__(self):
         self.connection.close()
@@ -261,65 +271,94 @@ class DatabaseService:
 
     # region Post
 
-    def add_post(self, post: Post):
-        sql = """
-            INSERT OR IGNORE INTO posts
-                (link, title, summary, published, created, rss_feed_id, ai_fileid, saved)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?) 
-        """
-        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved))
-        cursor = self._execute_sql(sql, data)
-        post.id = cursor.lastrowid
+    def add_posts(self, posts: list[Post]):
+        documents = []
+        ids = []
+        metadata: List[Mapping[str, Union[str, int, float, bool]]] = []
+        for post in posts:
+            ids.append(post.link)
+            documents.append(post.summary)
+            metadata.append({
+                "title": post.title,
+                "published": _datetime_to_text(post.published)})
+
+        self.vector_db_collection.add(
+            ids=ids,
+            documents=documents,
+            metadatas=metadata
+        )
+
+        return
+
+    def get_posts(self):
+        include = [IncludeEnum.metadatas]
+        db_posts = self.vector_db_collection.get(include=include)
+        metadatas = db_posts["metadatas"]
+        for db_post in metadatas:
+            print(db_post)
 
     def update_post(self, post: Post):
-        sql = """
-            UPDATE posts
-            SET
-                link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, ai_fileid=?, saved=?
-            WHERE id = ?
-        """
-        data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-                _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved), post.id)
-        self._execute_sql(sql, data)
+        return
 
-    def get_posts_by_area_without_topic(self, area_id: int) -> list[Post]:
-        return self._get_posts(f"""
-            posts.rss_feed_id IN (
-                SELECT areas_x_rss_feeds.rss_feed_id 
-                FROM areas_x_rss_feeds
-                WHERE areas_x_rss_feeds.area_id = {area_id}
-            ) 
-            AND
-            (
-                SELECT COUNT(*) 
-                FROM posts_x_topics 
-                JOIN topics ON topics.id = posts_x_topics.topic_id
-                WHERE 
-                    posts_x_topics.post_id = posts.id
-                    AND topics.area_id = {area_id}
-            ) = 0
-        """)
-
-    def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
-        self.cursor.execute(f"""
-            SELECT 
-                id, link, title, summary, published, created, rss_feed_id, ai_fileid, saved
-            FROM posts
-            WHERE {where}
-            ORDER BY {order_by}
-        """)
-        rows = self.cursor.fetchall()
-        posts = []
-        for row in rows:
-            post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
-                        published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
-                        rss_feed_id=row[6], ai_fileid=row[7], saved=_int_to_bool(row[8]))
-            posts.append(post)
-        return posts
-
-    # endregion
+    # def add_post(self, post: Post):
+    #     sql = """
+    #         INSERT OR IGNORE INTO posts
+    #             (link, title, summary, published, created, rss_feed_id, ai_fileid, saved)
+    #         VALUES
+    #             (?, ?, ?, ?, ?, ?, ?, ?)
+    #     """
+    #     data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
+    #             _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved))
+    #     cursor = self._execute_sql(sql, data)
+    #     post.id = cursor.lastrowid
+    #
+    # def update_post(self, post: Post):
+    #     sql = """
+    #         UPDATE posts
+    #         SET
+    #             link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, ai_fileid=?, saved=?
+    #         WHERE id = ?
+    #     """
+    #     data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
+    #             _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved), post.id)
+    #     self._execute_sql(sql, data)
+    #
+    # def get_posts_by_area_without_topic(self, area_id: int) -> list[Post]:
+    #     return self._get_posts(f"""
+    #         posts.rss_feed_id IN (
+    #             SELECT areas_x_rss_feeds.rss_feed_id
+    #             FROM areas_x_rss_feeds
+    #             WHERE areas_x_rss_feeds.area_id = {area_id}
+    #         )
+    #         AND
+    #         (
+    #             SELECT COUNT(*)
+    #             FROM posts_x_topics
+    #             JOIN topics ON topics.id = posts_x_topics.topic_id
+    #             WHERE
+    #                 posts_x_topics.post_id = posts.id
+    #                 AND topics.area_id = {area_id}
+    #         ) = 0
+    #     """)
+    #
+    # def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
+    #     self.cursor.execute(f"""
+    #         SELECT
+    #             id, link, title, summary, published, created, rss_feed_id, ai_fileid, saved
+    #         FROM posts
+    #         WHERE {where}
+    #         ORDER BY {order_by}
+    #     """)
+    #     rows = self.cursor.fetchall()
+    #     posts = []
+    #     for row in rows:
+    #         post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
+    #                     published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
+    #                     rss_feed_id=row[6], ai_fileid=row[7], saved=_int_to_bool(row[8]))
+    #         posts.append(post)
+    #     return posts
+    #
+    # # endregion
 
     # region Topic
 
