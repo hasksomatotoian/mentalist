@@ -9,16 +9,16 @@
 </head>
 <body>
     <header>
-      <nav>
-        <ul>
+      <nav class="navbar navbar-expand-lg bg-body-tertiary">
+        <div class="container-fluid">
+          <div class="navbar-nav">
             {% for area in areas %}
-            <li>
-                <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('display_list', area_id=area.id) }}">
-                    {{ area.title }} ({{ area.number_of_unread_topics }})
-                </a>
-            </li>
+            <a class="nav-link link-body-emphasis link-underline-opacity-0" href="{{ url_for('display_list', area_id=area.id) }}" style="transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#e9ecef'" onmouseout="this.style.backgroundColor=''">
+                {{ area.title }} ({{ area.number_of_unread_topics }})
+            </a>
             {% endfor %}
-        </ul>
+          </div>
+        </div>
       </nav>
     </header>
     <main class="d-flex flex-nowrap">
@@ -28,8 +28,28 @@
                 {% for topic in topics %}
                 <article class="list-group-item list-group-item-action py-3 lh-sm">
                     <div class="row mb-1">
-                        <div class="col-11">
-                            <strong class="mb-1">{{ topic.title }}</strong>&nbsp;<span class="badge" style="background-color: #{{ 'F4511E' if topic.ai_rating == 1 else 'FFC107' if topic.ai_rating == 2 else '64DD17' if topic.ai_rating == 3 else '2962FF' if topic.ai_rating == 4 else '616161' }};">{{ topic.ai_rating }}</span>
+                        <div class="col-7">
+                            <strong class="mb-1">{{ topic.title }}</strong><span class="badge ms-2" style="background-color: #{{ 'F4511E' if topic.ai_rating > 90 else 'FFC107' if topic.ai_rating > 70 else '348800' if topic.ai_rating > 50 else '2962FF' if topic.ai_rating > 30 else '616161' }};">{{ topic.ai_rating }}</span>
+                        </div>
+                        <div class="col-4 text-end">
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=0) }}">
+                                <span class="badge" style="background-color: #000000;"><i class="bi bi-check-lg"></i> 0%</span>
+                            </a>
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=20) }}">
+                                <span class="badge" style="background-color: #616161;"><i class="bi bi-check-lg"></i> 20%</span>
+                            </a>
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=40) }}">
+                                <span class="badge" style="background-color: #2962FF;"><i class="bi bi-check-lg"></i> 40%</span>
+                            </a>
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=60) }}">
+                                <span class="badge" style="background-color: #348800;"><i class="bi bi-check-lg"></i> 60%</span>
+                            </a>
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=80) }}">
+                                <span class="badge" style="background-color: #FFC107;"><i class="bi bi-check-lg"></i> 80%</span>
+                            </a>
+                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id, my_rating=100) }}">
+                                <span class="badge" style="background-color: #F4511E;"><i class="bi bi-check-lg"></i> 100%</span>
+                            </a>
                         </div>
                         <div class="col-1">
                             <a class="link-body-emphasis link-underline-opacity-0" data-bs-toggle="collapse" data-bs-target="#topic-links-{{ topic.id }}" aria-expanded="false" aria-controls="topic-links-{{ topic.id }}">
@@ -39,29 +59,28 @@
                             <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_save', area_id=topic.area_id, topic_id=topic.id) }}">
                                 <i class="bi {{ 'bi-bookmark-plus-fill' if topic.saved else 'bi-bookmark-plus' }}"></i>
                             </a>
-                            &nbsp;
-                            <a class="link-body-emphasis link-underline-opacity-0" href="{{ url_for('topic_read', area_id=topic.area_id, topic_id=topic.id) }}">
-                                <i class="bi bi-check-lg"></i>
-                            </a>
                         </div>
                     </div>
                     <a class="link-body-emphasis link-underline-opacity-0" data-bs-toggle="collapse" data-bs-target="#topic-links-{{ topic.id }}" aria-expanded="false" aria-controls="topic-links-{{ topic.id }}">
                         <div class="col-11 mb-1 small text-body-secondary">
+                            {% if topic.parent_id != None %}
+                            {{ topic.update_summary }}
+                            <div class="ms-3 mt-2 p-2 border border-secondary rounded">
+                                <strong>{{ topic.parent_topic.title }}</strong><br>
+                                {{ topic.parent_topic.summary }}
+                            </div>
+                            {% else %}
                             {{ topic.summary }}
+                            {% endif %}
                         </div>
-                        <div class="col-11 mb-1 small text-body-secondary">
-                            <strong>Analysis</strong>
-                            {{ topic.ai_analysis }}
-                        </div>
-                    </a>
                     <div class="ps-3 pt-3 col-11 small collapse" id="topic-links-{{ topic.id }}">
                         {% for post in topic.posts %}
                         <a href="{{ post.link }}" target="_blank" class="link-body-emphasis text-decoration-none">
                         <div class="pt-2 pb-2 small border-top" style="width: 100%">
                             <div class="col-11">
-                                <img src="{{ post.rss_feed.web_link }}/favicon.ico" height="12px" />&nbsp;
+                                <img src="{{ post.rss_feed.web_link }}/../../../../../../../favicon.ico" height="12px" />&nbsp;
                                 <strong><span class="text-body-secondary">{{ post.rss_feed.title }} |</span></strong>
-                                <strong>{{ post.title }}</strong>
+                                <strong>{{ post.title }}</strong> ({{ post.get_published_ago() }})
                             </div>
                             <div class="ps-3 pt-1 text-body-secondary">
                                 {{ post.summary }}

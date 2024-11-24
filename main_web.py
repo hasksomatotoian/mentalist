@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from flask import Flask, render_template, redirect, url_for
 from services.config_service import ConfigService
@@ -19,19 +20,19 @@ def index():
 def display_list(area_id: int):
     db_service = DatabaseService(cfg_service)
     areas = db_service.get_areas_for_web()
-    topics = db_service.get_topics_for_view(area_id)
+    topics = db_service.get_topics_for_view(int(area_id))
     return render_template('index.html', areas=areas, topics=topics)
 
 
-@app.route('/topic_read/<area_id>/<topic_id>')
-def topic_read(area_id: int, topic_id: int):
+@app.route('/topic_read/<area_id>/<topic_id>/<my_rating>')
+def topic_read(area_id: int, topic_id: uuid.UUID, my_rating: int):
     db_service = DatabaseService(cfg_service)
-    db_service.toggle_topic_read(topic_id)
-    return redirect(url_for('display_list', area_id=area_id))
+    db_service.update_topic_rating_and_mark_as_read(topic_id, int(my_rating))
+    return redirect(url_for('display_list', area_id=int(area_id)))
 
 
 @app.route('/topic_save/<area_id>/<topic_id>')
-def topic_save(area_id: int, topic_id: int):
+def topic_save(area_id: int, topic_id: uuid.UUID):
     db_service = DatabaseService(cfg_service)
     db_service.toggle_topic_saved(topic_id)
     return redirect(url_for('display_list', area_id=area_id))

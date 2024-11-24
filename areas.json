@@ -1,13 +1,36 @@
 {
   "areas": [
     {
+      "name": "News-World",
+      "title": "News - World",
+      "instructions_filename": "./instructions/NEWS_WORLD.md",
+      "model": "gpt-4-turbo-preview",
+      "rss_feeds": [
+        "https://www.semafor.com/rss.xml",
+        "https://www.politico.eu/feed/",
+        "https://moxie.foxnews.com/google-publisher/latest.xml",
+        "https://www.aljazeera.com/xml/rss/all.xml",
+        "http://feeds.bbci.co.uk/news/world/rss.xml"
+      ],
+      "--rss_feeds": [
+        "http://rss.cnn.com/rss/cnn_allpolitics.rss",
+        "http://www.ct24.cz/rss/hlavni-zpravy/"
+      ]
+    },
+    {
       "name": "F1",
       "title": "Formula 1",
       "instructions_filename": "./instructions/F1_NEW_TOPICS.md",
       "model": "gpt-4-turbo-preview",
       "rss_feeds": [
         "https://www.formula1.com/content/fom-website/en/latest/all.xml",
-        "http://www1.skysports.com/feeds/12433/news.xml",
+        "http://www1.skysports.com/feeds/12433/news.xml"
+      ],
+      "--rss_feeds": [
+        "http://formulaspy.com/feed",
+        "https://www.f1-fansite.com/feed/",
+        "https://www.gpfans.com/en/rss.xml",
+        "https://www.pitpass.com/fes_php/fes_usr_sit_newsfeed.php?fes_prepend_aty_sht_name=1",
         "http://formulaspy.com/feed",
         "https://www.f1-fansite.com/feed/",
         "https://www.gpfans.com/en/rss.xml",
@@ -15,27 +38,12 @@
         "https://www.crash.net/rss/f1",
         "https://www.crash.net/rss/f2",
         "https://www.crash.net/rss/f3",
-        "https://www.motorsportweek.com/series/single-seater/formula-1/feed/"
-      ],
-      "--rss_feeds": [
+        "https://www.motorsportweek.com/series/single-seater/formula-1/feed/",
         "http://www.f1reader.com/rss/f1r"
       ]
-    },
-    {
-      "name": "News-World",
-      "title": "News - World",
-      "instructions_filename": "./instructions/NEWS_WORLD.md",
-      "model": "gpt-4-turbo-preview",
-      "rss_feeds": [
-        "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "http://www.ct24.cz/rss/hlavni-zpravy/"
-      ],
-      "--rss_feeds": [
-        "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "http://www.ct24.cz/rss/hlavni-zpravy/",
-        "https://www.semafor.com/rss.xml",
-        "https://www.politico.eu/feed/"
-      ]
     }
+
+  ],
+  "--areas": [
   ]
 }
