@@ -7,7 +7,9 @@
       "model": "gpt-4-turbo-preview",
       "rss_feeds": [
         "https://www.formula1.com/content/fom-website/en/latest/all.xml",
-        "http://www1.skysports.com/feeds/12433/news.xml",
+        "http://www1.skysports.com/feeds/12433/news.xml"
+      ],
+      "--rss_feeds": [
         "http://formulaspy.com/feed",
         "https://www.f1-fansite.com/feed/",
         "https://www.gpfans.com/en/rss.xml",
@@ -15,9 +17,7 @@
         "https://www.crash.net/rss/f1",
         "https://www.crash.net/rss/f2",
         "https://www.crash.net/rss/f3",
-        "https://www.motorsportweek.com/series/single-seater/formula-1/feed/"
-      ],
-      "--rss_feeds": [
+        "https://www.motorsportweek.com/series/single-seater/formula-1/feed/",
         "http://www.f1reader.com/rss/f1r"
       ]
     },
@@ -27,10 +27,10 @@
       "instructions_filename": "./instructions/NEWS_WORLD.md",
       "model": "gpt-4-turbo-preview",
       "rss_feeds": [
-        "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "http://www.ct24.cz/rss/hlavni-zpravy/"
+        "http://feeds.bbci.co.uk/news/world/rss.xml"
       ],
       "--rss_feeds": [
+        "http://www.ct24.cz/rss/hlavni-zpravy/",
         "http://feeds.bbci.co.uk/news/world/rss.xml",
         "http://www.ct24.cz/rss/hlavni-zpravy/",
         "https://www.semafor.com/rss.xml",

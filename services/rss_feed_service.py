@@ -26,7 +26,8 @@ class RssFeedService:
     def __init__(self, database_service: DatabaseService):
         self.database_service = database_service
 
-    def add_latest_posts(self):
+    def get_latest_posts(self) -> list[Post]:
+        posts = []
         logging.debug("Getting list of RSS feeds")
         rss_feeds = self.database_service.get_enabled_rss_feeds()
         logging.info(f"Found {len(rss_feeds)} RSS feeds")
@@ -59,7 +60,7 @@ class RssFeedService:
                     post = Post(entry.link, html.unescape(entry.title),
                                 _remove_html(_remove_self_promotion(html.unescape(entry.summary))),
                                 published, rss_feed.id)
-                    self.database_service.add_post(post)
+                    posts.append(post)
 
                 rss_feed.last_error = None
             except Exception as e:
@@ -67,3 +68,5 @@ class RssFeedService:
                 logging.error(f"Error when parsing RSS feed \"{rss_feed}\": {e}")
 
             self.database_service.update_rss_feed(rss_feed)
+
+        return posts

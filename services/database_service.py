@@ -89,8 +89,8 @@ class DatabaseService:
         self.vector_db_collection = self.vector_db.get_or_create_collection(config_service.vector_db_collection)
 
         self.connection = sqlite3.connect(config_service.database_filename)
-        # self.cursor = self.connection.cursor()
-        # self._create_db()
+        self.cursor = self.connection.cursor()
+        self._create_db()
 
     def __del__(self):
         self.connection.close()
@@ -321,10 +321,26 @@ class DatabaseService:
         embeddings = db_posts["embeddings"]
         for index in range(len(ids)):
             post = _metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index])
-            print(post)
             posts.append(post)
 
         return posts
+
+
+    def get_posts_by_embeddings(self, embeddings: list[float]) -> list[Post]:
+        include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings, IncludeEnum.distances]
+        db_posts = self.vector_db_collection.query(
+            query_embeddings=[embeddings],
+            n_results=10,
+            include=include
+        )
+        ids = db_posts["ids"][0]
+        documents = db_posts["documents"][0]
+        metadatas = db_posts["metadatas"][0]
+        embeddings = db_posts["embeddings"][0]
+        distances = db_posts["distances"][0]
+        for index in range(len(ids)):
+            post = _metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index])
+            print(f"\t{post.title}", distances[index])
 
     def update_post(self, post: Post):
         return

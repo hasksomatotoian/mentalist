@@ -12,6 +12,9 @@ class Post:
         if created is None:
             created = datetime.now().astimezone(timezone.utc)
 
+        if published is None:
+            published = created
+
         self.id = post_id
         self.link = link
         self.title = title
