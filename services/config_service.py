@@ -23,3 +23,7 @@ class ConfigService:
         self.ollama_base_url = "http://192.168.50.185:11434"
         self.keywords_model = "llama3.2"
         self.embeddings_model = "nomic-embed-text"
+
+        self.similar_posts_max_distance = 0.3
+        self.similar_posts_max_number = 30
+

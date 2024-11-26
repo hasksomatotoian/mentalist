@@ -83,12 +83,14 @@ class DatabaseService:
     # region _Private Methods
 
     def __init__(self, config_service: ConfigService):
+        self.config_service = config_service
+
         if not os.path.exists(config_service.vector_db_path):
             os.makedirs(config_service.vector_db_path)
-        self.vector_db = chromadb.PersistentClient(path=config_service.vector_db_path)
-        self.vector_db_collection = self.vector_db.get_or_create_collection(config_service.vector_db_collection)
+        self.vector_db = chromadb.PersistentClient(path=self.config_service.vector_db_path)
+        self.vector_db_collection = self.vector_db.get_or_create_collection(self.config_service.vector_db_collection)
 
-        self.connection = sqlite3.connect(config_service.database_filename)
+        self.connection = sqlite3.connect(self.config_service.database_filename)
         self.cursor = self.connection.cursor()
         self._create_db()
 
@@ -310,11 +312,14 @@ class DatabaseService:
 
         return
 
-    def get_posts(self) -> list[Post]:
+
+    def get_unread_posts(self) -> list[Post]:
         posts: list[Post] = []
 
         include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings]
-        db_posts = self.vector_db_collection.get(include=include)
+        db_posts = self.vector_db_collection.get(
+            where={"read": False},
+            include=include)
         ids = db_posts["ids"]
         documents = db_posts["documents"]
         metadatas = db_posts["metadatas"]
@@ -326,11 +331,11 @@ class DatabaseService:
         return posts
 
 
-    def get_posts_by_embeddings(self, embeddings: list[float]) -> list[Post]:
+    def get_similar_posts(self, post: Post) -> list[Post]:
         include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings, IncludeEnum.distances]
         db_posts = self.vector_db_collection.query(
-            query_embeddings=[embeddings],
-            n_results=10,
+            query_embeddings=[post.embeddings],
+            n_results=self.config_service.similar_posts_max_number,
             include=include
         )
         ids = db_posts["ids"][0]
@@ -341,9 +346,8 @@ class DatabaseService:
 
         posts = []
         for index in range(len(ids)):
-            if distances[index] <= 0.3:
+            if distances[index] <= self.config_service.similar_posts_max_distance:
                 posts.append(_metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index]))
-                # print(f"\t{post.title}", distances[index])
         return posts
 
     def get_post_id_by_link(self, link: str) -> uuid:

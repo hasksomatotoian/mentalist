@@ -25,5 +25,5 @@ posts: list[Post] = [
 ]
 db_service.add_posts(posts)
 
-db_service.get_posts()
+db_service.get_unread_posts()
 

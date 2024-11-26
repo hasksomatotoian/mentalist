@@ -3,6 +3,7 @@ import json
 from model.area import Area
 from model.post import Post
 from model.rss_feed import RssFeed
+from model.topic import Topic
 from services.config_service import ConfigService
 from services.database_service import DatabaseService
 from services.openai_service import OpenAiService
@@ -75,6 +76,34 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
 
         batch_start = batch_end
 
+def create_topics_from_unread_posts(db_service: DatabaseService) -> list[Topic]:
+    grouped_posts = {}
+
+    unread_posts = db_service.get_unread_posts()
+    logging.info(f"Grouping {len(unread_posts)} unread posts...")
+    for post in unread_posts:
+        grouped_posts[post] = db_service.get_similar_posts(post)
+
+    logging.info(f"Sorting {len(grouped_posts)} unread post groups...")
+    sorted_posts = dict(sorted(grouped_posts.items(), key=lambda item: len(item[1]) if item[1] is not None else 0, reverse=True))
+
+    logging.info(f"Creating topics...")
+    posts_x_topics = {}
+    topics = []
+
+    for post in sorted_posts.keys():
+        if post.id in posts_x_topics:
+            topics_index = posts_x_topics[post.id]
+        else:
+            topics.append({})
+            topics_index = len(topics) - 1
+            posts_x_topics[post.id] = topics_index
+
+        for sub_post in sorted_posts[post]:
+            topics[topics_index][sub_post.id] = sub_post
+            posts_x_topics[sub_post.id] = topics_index
+
+    return topics
 
 if __name__ == '__main__':
     cfg_service = ConfigService()
@@ -93,33 +122,7 @@ if __name__ == '__main__':
 
     store_posts(new_posts, db_service)
 
-    grouped_posts = {}
-
-    unread_posts = db_service.get_posts()
-    logging.info(f"Grouping {len(unread_posts)} unread posts...")
-    for post in unread_posts:
-        # print(post.title)
-        grouped_posts[post] = db_service.get_posts_by_embeddings(post.embeddings)
-        # logging.info(post)
-
-    logging.info(f"Sorting {len(grouped_posts)} unread posts...")
-    sorted_posts = dict(sorted(grouped_posts.items(), key=lambda item: len(item[1]) if item[1] is not None else 0, reverse=True))
-
-    logging.info(f"Creating topics...")
-    posts_x_topics = {}
-    topics = []
-
-    for post in sorted_posts.keys():
-        if post.id in posts_x_topics:
-            topics_index = posts_x_topics[post.id]
-        else:
-            topics.append({})
-            topics_index = len(topics) - 1
-            posts_x_topics[post.id] = topics_index
-
-        for sub_post in sorted_posts[post]:
-            topics[topics_index][sub_post.id] = sub_post
-            posts_x_topics[sub_post.id] = topics_index
+    topics = create_topics_from_unread_posts(db_service)
 
     logging.info(f"Displaying {len(topics)} topics...")
 
