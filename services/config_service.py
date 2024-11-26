@@ -10,6 +10,7 @@ class ConfigService:
 
         self.logging_level = logging.INFO
         self.logging_format = '%(asctime)s - %(levelname)s - %(message)s'
+        logging.basicConfig(level=self.logging_level, format=self.logging_format)
 
         self.vector_db_path = ".\\chroma_db"
         self.vector_db_collection = "mentalist"

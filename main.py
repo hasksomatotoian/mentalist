@@ -37,15 +37,6 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
     embeddings = OllamaEmbeddings(base_url=cfg_service.ollama_base_url, model=cfg_service.embeddings_model)
     # embeddings = OpenAIEmbeddings()
 
-    template = """Document: {document}
-    
-    Answer: Give me a list of keywords for the Document above. Answer with simple list of keyword, without any text 
-    before and after the keyword list. The list of keywords is on a single line, each keyword separated by a comma (,). 
-    Focus on names of people, companies, places, etc. If applicable, add a keyword for the venue and the date or year."""
-
-    prompt = ChatPromptTemplate.from_template(template)
-    keywords_model = OllamaLLM(base_url=cfg_service.ollama_base_url, model=cfg_service.keywords_model)
-
     batch_start = 0
     BATCH_SIZE = 10
 
@@ -58,9 +49,6 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
 
         documents = []
         for index in range(batch_start, batch_end):
-            # chain = prompt | keywords_model
-            # result = chain.invoke({"document": f"Title: {posts[index].title}\n\n{posts[index].summary}"})
-            # documents.append(result)
             documents.append(f"Title: {posts[index].title}\n\n{posts[index].summary}")
 
         logging.info(f"Calculating embeddings for {len(documents)} posts...")
@@ -75,6 +63,35 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
         db_service.add_posts(batch_posts)
 
         batch_start = batch_end
+
+def get_topic_summary(posts: list[Post]) -> str:
+    template = """Summaries: {summaries}
+
+    Answer: Create an overall summary from the list of summaries which you got.
+    The overall summary should be one paragraph long, with at most five sentences.
+    Focus on facts, not on opinions or predictions"""
+    prompt = ChatPromptTemplate.from_template(template)
+    keywords_model = OllamaLLM(base_url=cfg_service.ollama_base_url, model=cfg_service.keywords_model)
+    chain = prompt | keywords_model
+
+    summaries = ""
+    for post in topic.values():
+        summaries += f"{post.title}\n{post.summary}\n\n"
+
+    return chain.invoke({"summaries": f"{summaries}"})
+
+
+def store_new_posts(db_service: DatabaseService):
+    rss_feed_service = RssFeedService(db_service)
+    latest_posts = rss_feed_service.get_latest_posts()
+
+    new_posts = []
+    for post in latest_posts:
+        if db_service.get_post_id_by_link(post.link) is None:
+            new_posts.append(post)
+
+    store_posts(new_posts, db_service)
+
 
 def create_topics_from_unread_posts(db_service: DatabaseService) -> list[Topic]:
     grouped_posts = {}
@@ -107,27 +124,20 @@ def create_topics_from_unread_posts(db_service: DatabaseService) -> list[Topic]:
 
 if __name__ == '__main__':
     cfg_service = ConfigService()
-    logging.basicConfig(level=cfg_service.logging_level, format=cfg_service.logging_format)
 
     db_service = DatabaseService(cfg_service)
     db_service.import_areas(load_areas_json())
 
-    rss_feed_service = RssFeedService(db_service)
-    latest_posts = rss_feed_service.get_latest_posts()
-
-    new_posts = []
-    for post in latest_posts:
-        if db_service.get_post_id_by_link(post.link) is None:
-            new_posts.append(post)
-
-    store_posts(new_posts, db_service)
-
+    store_new_posts(db_service)
     topics = create_topics_from_unread_posts(db_service)
 
     logging.info(f"Displaying {len(topics)} topics...")
-
     for topic in topics:
-        prefix = ''
+        if len(topic.values()) > 1:
+            print(get_topic_summary(topic.values()))
+            prefix = "\t"
+        else:
+            prefix = ''
         for post in topic.values():
             print(f"{prefix}{post.title}")
             prefix = "\t"
