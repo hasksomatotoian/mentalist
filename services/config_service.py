@@ -21,4 +21,5 @@ class ConfigService:
         self.openai_posts_batch_size = 80
 
         self.ollama_base_url = "http://192.168.50.185:11434"
+        self.keywords_model = "llama3.2"
         self.embeddings_model = "nomic-embed-text"

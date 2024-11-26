@@ -338,9 +338,24 @@ class DatabaseService:
         metadatas = db_posts["metadatas"][0]
         embeddings = db_posts["embeddings"][0]
         distances = db_posts["distances"][0]
+
+        posts = []
         for index in range(len(ids)):
-            post = _metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index])
-            print(f"\t{post.title}", distances[index])
+            if distances[index] <= 0.3:
+                posts.append(_metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index]))
+                # print(f"\t{post.title}", distances[index])
+        return posts
+
+    def get_post_id_by_link(self, link: str) -> uuid:
+        db_posts = self.vector_db_collection.get(
+            where={"link": link},
+            include=[]
+        )
+        ids = db_posts["ids"]
+        if len(ids) < 1:
+            return None
+
+        return ids[0]
 
     def update_post(self, post: Post):
         return

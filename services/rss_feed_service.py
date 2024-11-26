@@ -46,21 +46,24 @@ class RssFeedService:
                 for entry in feed.entries:
                     logging.debug(f"Processing post \"{entry.title}\"")
 
-                    if 'published_parsed' in entry:
-                        published = datetime(
-                            year=entry.published_parsed.tm_year,
-                            month=entry.published_parsed.tm_mon,
-                            day=entry.published_parsed.tm_mday,
-                            hour=entry.published_parsed.tm_hour,
-                            minute=entry.published_parsed.tm_min,
-                            second=entry.published_parsed.tm_sec
-                        )
-                    else:
-                        published = None
-                    post = Post(entry.link, html.unescape(entry.title),
-                                _remove_html(_remove_self_promotion(html.unescape(entry.summary))),
-                                published, rss_feed.id)
-                    posts.append(post)
+                    try:
+                        if 'published_parsed' in entry:
+                            published = datetime(
+                                year=entry.published_parsed.tm_year,
+                                month=entry.published_parsed.tm_mon,
+                                day=entry.published_parsed.tm_mday,
+                                hour=entry.published_parsed.tm_hour,
+                                minute=entry.published_parsed.tm_min,
+                                second=entry.published_parsed.tm_sec
+                            )
+                        else:
+                            published = None
+                        post = Post(entry.link, html.unescape(entry.title),
+                                    _remove_html(_remove_self_promotion(html.unescape(entry.summary))),
+                                    published, rss_feed.id)
+                        posts.append(post)
+                    except Exception as e:
+                        logging.error(f"Error when parsing post \"{entry.title}\": {e}")
 
                 rss_feed.last_error = None
             except Exception as e:
