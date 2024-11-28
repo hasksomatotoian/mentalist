@@ -64,21 +64,25 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
 
         batch_start = batch_end
 
-def get_topic_summary(posts: list[Post]) -> str:
+def get_topic_title_and_summary(posts: list[Post]) -> (str, str):
     template = """Summaries: {summaries}
 
-    Answer: Create an overall summary from the list of summaries which you got.
-    The overall summary should be one paragraph long, with at most five sentences.
-    Focus on facts, not on opinions or predictions"""
+    Answer: Create a title and an overall summary from the list of summaries which you got.
+    The title should be on the first line of the response. Title should be as short as possible, ideally between 3 and 5 words.
+    The overall summary should be one paragraph long, and should be also as short as possible, with at most five sentences.
+    Focus on facts, not on opinions or sentiment.
+    The response must not contain anything else than the title and the summary."""
     prompt = ChatPromptTemplate.from_template(template)
     keywords_model = OllamaLLM(base_url=cfg_service.ollama_base_url, model=cfg_service.keywords_model)
     chain = prompt | keywords_model
 
     summaries = ""
-    for post in topic.values():
+    for post in posts:
         summaries += f"{post.title}\n{post.summary}\n\n"
 
-    return chain.invoke({"summaries": f"{summaries}"})
+    result = chain.invoke({"summaries": f"{summaries}"}).splitlines()
+
+    return result[0], result[-1]
 
 
 def store_new_posts(db_service: DatabaseService):
@@ -99,26 +103,44 @@ def create_topics_from_unread_posts(db_service: DatabaseService) -> list[Topic]:
     unread_posts = db_service.get_unread_posts()
     logging.info(f"Grouping {len(unread_posts)} unread posts...")
     for post in unread_posts:
-        grouped_posts[post] = db_service.get_similar_posts(post)
+        grouped_posts[post] = db_service.get_similar_unread_posts(post)
 
     logging.info(f"Sorting {len(grouped_posts)} unread post groups...")
     sorted_posts = dict(sorted(grouped_posts.items(), key=lambda item: len(item[1]) if item[1] is not None else 0, reverse=True))
 
     logging.info(f"Creating topics...")
     posts_x_topics = {}
-    topics = []
+    topics_x_posts = []
 
     for post in sorted_posts.keys():
         if post.id in posts_x_topics:
-            topics_index = posts_x_topics[post.id]
+            topics_x_posts_index = posts_x_topics[post.id]
         else:
-            topics.append({})
-            topics_index = len(topics) - 1
-            posts_x_topics[post.id] = topics_index
+            topics_x_posts.append({})
+            topics_x_posts_index = len(topics_x_posts) - 1
+            posts_x_topics[post.id] = topics_x_posts_index
 
         for sub_post in sorted_posts[post]:
-            topics[topics_index][sub_post.id] = sub_post
-            posts_x_topics[sub_post.id] = topics_index
+            topics_x_posts[topics_x_posts_index][sub_post.id] = sub_post
+            posts_x_topics[sub_post.id] = topics_x_posts_index
+
+    topics = []
+    for topic_x_posts in topics_x_posts:
+        if len(topic_x_posts) < 0:
+            continue
+        if len(topic_x_posts) > 1:
+            topic_title, topic_summary = get_topic_title_and_summary(topic_x_posts.values())
+        else:
+            post = topic_x_posts
+            topic_title = topic_x_posts[0].title
+            topic_summary = topic_x_posts[0].summary
+
+        topic = Topic(-1, topic_title, topic_summary)
+        topics.append(topic)
+
+        print(f"{topic.title}\n{topic.summary}")
+        for post in topic_x_posts.values():
+            print(f"\t{post.title}")
 
     return topics
 
@@ -134,7 +156,7 @@ if __name__ == '__main__':
     logging.info(f"Displaying {len(topics)} topics...")
     for topic in topics:
         if len(topic.values()) > 1:
-            print(get_topic_summary(topic.values()))
+            print(get_topic_title_and_summary(topic.values()))
             prefix = "\t"
         else:
             prefix = ''

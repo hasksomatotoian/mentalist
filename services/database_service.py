@@ -331,12 +331,13 @@ class DatabaseService:
         return posts
 
 
-    def get_similar_posts(self, post: Post) -> list[Post]:
+    def get_similar_unread_posts(self, post: Post) -> list[Post]:
         include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings, IncludeEnum.distances]
         db_posts = self.vector_db_collection.query(
             query_embeddings=[post.embeddings],
             n_results=self.config_service.similar_posts_max_number,
-            include=include
+            include=include,
+            where = {"read": False}
         )
         ids = db_posts["ids"][0]
         documents = db_posts["documents"][0]

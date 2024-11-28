@@ -1,10 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Topic:
-    def __init__(self, area_id: int, title: str, summary: str, ai_rating: int, ai_analysis: str,
-                 created: datetime, topic_id: int = None, my_rating: int = 0,
+    def __init__(self, area_id: int, title: str, summary: str, ai_rating: int = 0, ai_analysis: str = None,
+                 created: datetime = None, topic_id: int = None, my_rating: int = 0,
                  read: bool = False, saved: bool = False):
+
+        if created is None:
+            created = datetime.now().astimezone(timezone.utc)
+
         self.id = topic_id
         self.area_id = area_id
         self.title = title
