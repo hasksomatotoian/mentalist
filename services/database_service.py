@@ -51,14 +51,16 @@ def _int_to_bool(int_value: int) -> bool | None:
 
 def _post_to_metadata(post: Post) -> Mapping[str, Union[str, int, float, bool]]:
     return {
-                "link": post.link,
-                "title": post.title,
-                "published": _datetime_to_text(post.published),
-                "created": _datetime_to_text(post.created),
-                "rss_feed_id": post.rss_feed_id,
-                "read": post.read,
-                "saved": post.saved
-            }
+        "table": "post",
+        "link": post.link,
+        "title": post.title,
+        "published": _datetime_to_text(post.published),
+        "created": _datetime_to_text(post.created),
+        "rss_feed_id": post.rss_feed_id,
+        "read": post.read,
+        "saved": post.saved
+    }
+
 
 def _metadata_to_post(post_id: uuid, summary: str, embeddings: List[float],
                       metadata: Mapping[str, Union[str, int, float, bool]]) -> Post:
@@ -75,6 +77,19 @@ def _metadata_to_post(post_id: uuid, summary: str, embeddings: List[float],
     post.embeddings = embeddings
     return post
 
+
+def _topic_to_metadata(topic: Topic) -> Mapping[str, Union[str, int, float, bool]]:
+    return {
+        "table": "post",
+        "area_id": topic.area_id,
+        "title": topic.title,
+        "update_summary": topic.update_summary,
+        "created": _datetime_to_text(topic.created),
+        "my_rating": topic.my_rating,
+        "ai_rating": topic.ai_rating,
+        "read": topic.read,
+        "saved": topic.saved
+    }
 
 # endregion
 
@@ -179,6 +194,8 @@ class DatabaseService:
 
     # endregion
 
+    # region Area
+
     def import_areas(self, areas: list[Area]):
         self.disable_all_areas()
         self.disable_all_rss_feeds()
@@ -210,8 +227,6 @@ class DatabaseService:
                 rss_feed_priority += 1
                 self.add_or_update_areas_x_rss_feeds(area_id=area_id, rss_feed_id=rss_feed_id,
                                                      priority=rss_feed_priority)
-
-    # region Area
 
     def add_area(self, area: Area):
         sql = """
@@ -316,14 +331,15 @@ class DatabaseService:
     def get_unread_posts(self) -> list[Post]:
         posts: list[Post] = []
 
-        include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings]
         db_posts = self.vector_db_collection.get(
-            where={"read": False},
-            include=include)
+            where={"read": False, "table": "post"},
+            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings])
+
         ids = db_posts["ids"]
         documents = db_posts["documents"]
         metadatas = db_posts["metadatas"]
         embeddings = db_posts["embeddings"]
+
         for index in range(len(ids)):
             post = _metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index])
             posts.append(post)
@@ -332,13 +348,13 @@ class DatabaseService:
 
 
     def get_similar_unread_posts(self, post: Post) -> list[Post]:
-        include = [IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings, IncludeEnum.distances]
         db_posts = self.vector_db_collection.query(
+            where={"read": False, "table": "post"},
+            include=[IncludeEnum.documents, IncludeEnum.metadatas, IncludeEnum.embeddings, IncludeEnum.distances],
             query_embeddings=[post.embeddings],
             n_results=self.config_service.similar_posts_max_number,
-            include=include,
-            where = {"read": False}
         )
+
         ids = db_posts["ids"][0]
         documents = db_posts["documents"][0]
         metadatas = db_posts["metadatas"][0]
@@ -349,11 +365,13 @@ class DatabaseService:
         for index in range(len(ids)):
             if distances[index] <= self.config_service.similar_posts_max_distance:
                 posts.append(_metadata_to_post(ids[index], documents[index], embeddings[index], metadatas[index]))
+
         return posts
+
 
     def get_post_id_by_link(self, link: str) -> uuid:
         db_posts = self.vector_db_collection.get(
-            where={"link": link},
+            where={"link": link, "table": "post"},
             include=[]
         )
         ids = db_posts["ids"]
@@ -362,82 +380,31 @@ class DatabaseService:
 
         return ids[0]
 
-    def update_post(self, post: Post):
-        return
-
-    # def add_post(self, post: Post):
-    #     sql = """
-    #         INSERT OR IGNORE INTO posts
-    #             (link, title, summary, published, created, rss_feed_id, ai_fileid, saved)
-    #         VALUES
-    #             (?, ?, ?, ?, ?, ?, ?, ?)
-    #     """
-    #     data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-    #             _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved))
-    #     cursor = self._execute_sql(sql, data)
-    #     post.id = cursor.lastrowid
-    #
-    # def update_post(self, post: Post):
-    #     sql = """
-    #         UPDATE posts
-    #         SET
-    #             link=?, title=?, summary=?, published=?, created=?, rss_feed_id=?, ai_fileid=?, saved=?
-    #         WHERE id = ?
-    #     """
-    #     data = (post.link, post.title, post.summary, _datetime_to_text(post.published),
-    #             _datetime_to_text(post.created), post.rss_feed_id, post.ai_fileid, _bool_to_int(post.saved), post.id)
-    #     self._execute_sql(sql, data)
-    #
-    # def get_posts_by_area_without_topic(self, area_id: int) -> list[Post]:
-    #     return self._get_posts(f"""
-    #         posts.rss_feed_id IN (
-    #             SELECT areas_x_rss_feeds.rss_feed_id
-    #             FROM areas_x_rss_feeds
-    #             WHERE areas_x_rss_feeds.area_id = {area_id}
-    #         )
-    #         AND
-    #         (
-    #             SELECT COUNT(*)
-    #             FROM posts_x_topics
-    #             JOIN topics ON topics.id = posts_x_topics.topic_id
-    #             WHERE
-    #                 posts_x_topics.post_id = posts.id
-    #                 AND topics.area_id = {area_id}
-    #         ) = 0
-    #     """)
-    #
-    # def _get_posts(self, where: str, order_by: str = "id") -> list[Post]:
-    #     self.cursor.execute(f"""
-    #         SELECT
-    #             id, link, title, summary, published, created, rss_feed_id, ai_fileid, saved
-    #         FROM posts
-    #         WHERE {where}
-    #         ORDER BY {order_by}
-    #     """)
-    #     rows = self.cursor.fetchall()
-    #     posts = []
-    #     for row in rows:
-    #         post = Post(post_id=row[0], link=row[1], title=row[2], summary=row[3],
-    #                     published=_text_to_datetime(row[4]), created=_text_to_datetime(row[5]),
-    #                     rss_feed_id=row[6], ai_fileid=row[7], saved=_int_to_bool(row[8]))
-    #         posts.append(post)
-    #     return posts
-    #
-    # # endregion
+    # endregion
 
     # region Topic
 
-    def add_topic(self, topic: Topic):
-        sql = """
-            INSERT INTO topics
-                (area_id, title, summary, created, my_rating, ai_rating, ai_analysis, read, saved)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        data = (topic.area_id, topic.title, topic.summary, _datetime_to_text(topic.created),
-                topic.my_rating, topic.ai_rating, topic.ai_analysis,
-                _bool_to_int(topic.read), _bool_to_int(topic.saved))
-        cursor = self._execute_sql(sql, data)
-        topic.id = cursor.lastrowid
+    def add_topics(self, topics: list[Topic]):
+        documents = []
+        ids = []
+        metadata: List[Mapping[str, Union[str, int, float, bool]]] = []
+        embeddings: list[List[float]] = []
+
+        for topic in topics:
+            ids.append(str(topic.id))
+            documents.append(topic.summary)
+            metadata.append(_topic_to_metadata(topic))
+
+            embeddings.append(topic.embeddings)
+
+        self.vector_db_collection.add(
+            ids=ids,
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadata
+        )
+
+        return
 
     def get_topic_by_id(self, topic_id: int) -> Topic | None:
         topics = self._get_topics(f"id={topic_id}", "id")

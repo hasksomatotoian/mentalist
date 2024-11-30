@@ -60,7 +60,7 @@ class RssFeedService:
                             published = None
                         post = Post(entry.link, html.unescape(entry.title),
                                     _remove_html(_remove_self_promotion(html.unescape(entry.summary))),
-                                    published, rss_feed.id)
+                                    published, rss_feed.id, rss_feed=rss_feed)
                         posts.append(post)
                     except Exception as e:
                         logging.error(f"Error when parsing post \"{entry.title}\": {e}")

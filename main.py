@@ -65,6 +65,8 @@ def store_posts(posts: list[Post], db_service: DatabaseService):
         batch_start = batch_end
 
 def get_topic_title_and_summary(posts: list[Post]) -> (str, str):
+    # Look at https://github.com/guardrails-ai/guardrails
+
     template = """Summaries: {summaries}
 
     Answer: Create a title and an overall summary from the list of summaries which you got.
